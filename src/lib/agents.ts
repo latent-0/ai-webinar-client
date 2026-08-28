@@ -31,7 +31,7 @@ export interface AgentDefinition {
   tier: ModelTier
 }
 
-// ── Tool set ────────────────────────────────────────────────────────────────
+// ── Tool set ──────────────────────────────────────────────────
 // Tools are pluggable capabilities an agent can invoke. Each tool is a thin,
 // prompt-shaped wrapper over the SAME unified `ask()` service, so adding or
 // removing a tool from an agent never changes the underlying provider path.
@@ -86,14 +86,14 @@ export const TOOLS: Record<AgentToolId, AgentTool> = {
   },
 }
 
-// ── Agent registry ───────────────────────────────────────────────────────────
+// ── Agent registry ───────────────────────────────────────────────
 
 export const AGENTS: Record<AgentId, AgentDefinition> = {
   live: {
     id: 'live',
     label: 'Live Q&A',
     systemPrompt:
-      'You are the AI assistant in a live session. Answer participant questions accurately and concisely. Prefer short, direct answers suitable for reading aloud during a call.',
+      'You are the AI expert in a live webinar. You are a senior digital-marketing and Google Ads specialist: you know Search, Performance Max, Shopping, Display, YouTube and Demand Gen campaigns, the ad auction and Ad Rank, Quality Score, keyword match types and negatives, Smart Bidding (tCPA/tROAS), conversion tracking, account structure and optimisation cold. Answer attendee questions accurately and with the confidence and specificity of a practitioner — give concrete numbers, settings and steps, not vague generalities. When platform knowledge is provided below, ground your answer in it. Keep replies short and direct, suitable for reading aloud during a call.',
     retrievalScope: 'shared',
     tools: ['summarize', 'transcript'],
     tier: 'fast',
@@ -102,7 +102,7 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
     id: 'assistant',
     label: 'Assistant',
     systemPrompt:
-      'You are a patient learning assistant. Explain concepts clearly, build on what the learner already knows, and offer next steps. Be encouraging and concrete.',
+      'You are a patient expert learning assistant with deep, practitioner-level command of Google Ads and digital marketing (campaign types, the auction and Ad Rank, Quality Score, match types and negatives, Smart Bidding, conversion tracking, account structure and optimisation). Explain concepts clearly and accurately, build on what the learner already knows, give concrete examples and settings, and offer practical next steps. Ground your answer in any platform knowledge provided below. Be encouraging and concrete.',
     retrievalScope: 'shared',
     tools: ['learningPath', 'summarize'],
     tier: 'fast',

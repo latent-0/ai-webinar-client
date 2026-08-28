@@ -22,17 +22,35 @@ export const KEYS = {
 }
 
 /**
+ * Whether the AI proxies may be used without a signed-in session.
+ *
+ * Off by default, so the proxies stay gated and are never an open relay that
+ * anyone could use to burn the account's API credits. Set ALLOW_PUBLIC_AI=1
+ * (or "true") to open the AI layer to anyone — this is what makes a public
+ * demo/webinar deployment fully functional without every attendee having to
+ * sign in first. Pair it with a low GROQ rate-limit / spend cap on the key.
+ */
+export function publicAiEnabled() {
+  return process.env.ALLOW_PUBLIC_AI === '1' || process.env.ALLOW_PUBLIC_AI === 'true'
+}
+
+/**
  * Gate every proxy behind a valid session so it is not an open relay that
  * anyone could use to burn the account's API credits. Returns the session, or
  * writes a 401 and returns null.
+ *
+ * When ALLOW_PUBLIC_AI is enabled a request with no session is served as an
+ * anonymous guest instead of being rejected, so a public webinar attendee can
+ * use the AI without signing in.
  */
 export function requireSession(req, res) {
   const session = getSession(req)
-  if (!session) {
-    res.status(401).json({ error: 'Not authenticated.' })
-    return null
+  if (session) return session
+  if (publicAiEnabled()) {
+    return { sub: 'guest', email: null, method: 'public' }
   }
-  return session
+  res.status(401).json({ error: 'Not authenticated.' })
+  return null
 }
 
 /** Enforce a single HTTP method. Returns true if the request may proceed. */
