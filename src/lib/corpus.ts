@@ -74,6 +74,67 @@ export const CORPUS: CorpusEntry[] = [
     body: 'Build mode exposes an API playground, a prompt library, model selection, and creative tools. These let a user test AI prompts and generate content (text, images, tables) inside a session.',
     keywords: ['tools', 'playground', 'prompt', 'library', 'image', 'table', 'build mode'],
   },
+
+  // ── Google Ads expert knowledge (LLP — webinar topic) ──────────────────────
+  // Practitioner-level Google Ads knowledge so the Live/Assistant agent can
+  // answer attendee questions like a seasoned PPC specialist. Scoped 'shared'
+  // so it surfaces in every surface via the same retrieval path.
+  {
+    id: 'gads-overview',
+    scopes: ['shared'],
+    title: 'Google Ads — what it is and how the auction works',
+    body: 'Google Ads is an online advertising platform where advertisers bid on keywords to show ads across Search, Display, YouTube, Shopping, Discover, Gmail and Maps. It runs a real-time auction on every query. Where and whether your ad shows is set by Ad Rank = Bid × Quality Score, plus the expected impact of ad extensions/assets and the context of the search. You pay per click (CPC), and you almost never pay your max bid — the actual CPC is roughly the Ad Rank of the competitor below you divided by your Quality Score, plus a cent.',
+    keywords: ['google ads', 'adwords', 'ppc', 'sem', 'auction', 'ad rank', 'cpc', 'bid', 'search ads', 'paid search', 'how does google ads work'],
+  },
+  {
+    id: 'gads-quality-score',
+    scopes: ['shared'],
+    title: 'Quality Score and how to improve it',
+    body: 'Quality Score (1–10) is Google\'s diagnostic of ad relevance, built from three parts: expected click-through rate (CTR), ad relevance (how well the ad matches the keyword intent), and landing page experience (relevance, speed, mobile-friendliness, transparency). A higher Quality Score lowers your CPC and raises your Ad Rank, so you pay less for better positions. Improve it by tightly theming ad groups (few closely-related keywords each), mirroring the keyword in the headline, using specific ad copy with a clear CTA, adding all relevant assets/extensions, and sending clicks to a fast, on-message landing page.',
+    keywords: ['quality score', 'ctr', 'ad relevance', 'landing page experience', 'relevance', 'improve quality score', 'lower cpc'],
+  },
+  {
+    id: 'gads-match-types',
+    scopes: ['shared'],
+    title: 'Keyword match types and negative keywords',
+    body: 'Match types control how closely a search must match your keyword. Broad match reaches the widest set of related searches (and now leans on Smart Bidding and audience signals); phrase match shows for searches that include the meaning of your phrase; exact match shows for the same meaning/intent as the keyword. Modern broad match can waste spend without good conversion tracking and Smart Bidding. Negative keywords exclude irrelevant terms (e.g. "free", "jobs", competitor names) and are essential to stop wasted clicks — mine the Search Terms report weekly and add negatives. Structure: exact/phrase for control, broad only with Smart Bidding + a solid negative list.',
+    keywords: ['match type', 'broad match', 'phrase match', 'exact match', 'negative keywords', 'search terms report', 'keywords'],
+  },
+  {
+    id: 'gads-campaign-types',
+    scopes: ['shared'],
+    title: 'Campaign types and when to use each',
+    body: 'Search (text ads on results — high intent, best for lead gen and direct response). Performance Max (goal-based, AI serves across all Google inventory from one campaign using asset groups and audience signals — strong for ecommerce and lead gen but a "black box", protect brand with exclusions). Shopping (product ads driven by the Merchant Center feed — core for ecommerce). Display (banner/image ads across the GDN — awareness and remarketing). Video/YouTube (awareness, consideration, and action formats). Demand Gen (visually rich social-style ads on YouTube, Discover, Gmail). Rule of thumb: capture existing demand with Search/Shopping first, then scale with Performance Max and generate demand with Video/Demand Gen.',
+    keywords: ['campaign type', 'performance max', 'pmax', 'shopping', 'display', 'youtube', 'video', 'demand gen', 'search campaign', 'gdn'],
+  },
+  {
+    id: 'gads-bidding',
+    scopes: ['shared'],
+    title: 'Bidding strategies (Smart Bidding)',
+    body: 'Manual CPC gives full control but does not scale. Smart Bidding uses Google\'s AI with conversion data: Maximize Conversions (get the most conversions for the budget), Target CPA (tCPA — hit a cost-per-acquisition), Maximize Conversion Value, and Target ROAS (tROAS — hit a return-on-ad-spend target, e.g. 400%). Maximize Clicks is for traffic, Target Impression Share for visibility/brand defence. Smart Bidding needs reliable conversion tracking and ideally ~15–30+ conversions/month to learn. Start on Maximize Conversions, then move to tCPA/tROAS once you have data; change targets gradually (±10–15%) to avoid resetting the learning phase.',
+    keywords: ['bidding', 'smart bidding', 'target cpa', 'tcpa', 'target roas', 'troas', 'maximize conversions', 'manual cpc', 'bid strategy', 'roas', 'cpa'],
+  },
+  {
+    id: 'gads-conversion-tracking',
+    scopes: ['shared'],
+    title: 'Conversion tracking and measurement',
+    body: 'Conversion tracking is the foundation of everything — Smart Bidding, optimisation and ROI reporting are only as good as the conversion data. Set it up via a Google tag / Google Tag Manager, import GA4 conversions, or use offline conversion import (upload CRM sales via GCLID) for lead-gen where the real value happens after the click. Define which actions count as primary (purchases, qualified leads) vs secondary. Use Enhanced Conversions to recover measurement lost to cookie/consent gaps. Track value, not just volume, so bidding can optimise to revenue. Watch for double-counting and only mark high-quality actions as primary conversions.',
+    keywords: ['conversion tracking', 'conversions', 'ga4', 'gtm', 'google tag', 'enhanced conversions', 'offline conversion', 'gclid', 'measurement', 'attribution'],
+  },
+  {
+    id: 'gads-structure',
+    scopes: ['shared'],
+    title: 'Account structure and ad copy best practice',
+    body: 'Structure: Account → Campaigns (by budget, goal, geo, or product line) → Ad Groups (tightly themed, ideally one intent each) → Keywords + Responsive Search Ads (RSAs). Give each RSA up to 15 headlines and 4 descriptions, pin sparingly (e.g. brand in H1), include the keyword and a clear benefit + CTA, and aim for "Good"/"Excellent" Ad Strength. Add every relevant asset (sitelinks, callouts, structured snippets, call, lead form, image, price, promotion) — assets lift CTR and Ad Rank at no extra cost. Keep budgets aligned to priority campaigns and avoid too many ad groups competing for the same terms.',
+    keywords: ['account structure', 'ad group', 'responsive search ads', 'rsa', 'headlines', 'ad copy', 'ad strength', 'assets', 'extensions', 'sitelinks', 'best practice'],
+  },
+  {
+    id: 'gads-metrics-optimization',
+    scopes: ['shared'],
+    title: 'Key metrics and optimisation workflow',
+    body: 'Core metrics: Impressions, CTR, CPC, Conversions, Conversion Rate (CVR), CPA, ROAS, and Impression Share (plus IS lost to budget vs rank). Diagnose with them: low CTR → weak ad/relevance; high CTR but low CVR → landing page or targeting/offer mismatch; high CPA → bids, keywords or Quality Score; IS lost to budget → raise budget on winners. Weekly optimisation loop: review Search Terms and add negatives, pause wasteful keywords/asset groups, reallocate budget to top ROAS/CPA performers, test new RSAs and assets, and let Smart Bidding gather data before judging (respect the ~1–2 week learning phase). Optimise to business outcomes (revenue/qualified leads), not vanity clicks.',
+    keywords: ['metrics', 'kpi', 'ctr', 'conversion rate', 'cvr', 'cpa', 'roas', 'impression share', 'optimization', 'optimisation', 'wasted spend', 'reporting', 'performance'],
+  },
 ]
 
 export interface RetrievedSnippet {
