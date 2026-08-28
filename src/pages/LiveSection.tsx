@@ -28,7 +28,6 @@ export default function LiveSection() {
 }
 
 function JoinButton() {
-  const rooms = useAppStore((s) => s.rooms)
   const setDisplayName = useAppStore((s) => s.setDisplayName)
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
@@ -39,7 +38,10 @@ function JoinButton() {
   function join(e: React.FormEvent) {
     e.preventDefault()
     const c = code.trim()
-    if (!rooms.find((r) => r.id === c)) { setErr("That room code wasn't found."); return }
+    if (!c) { setErr('Enter a room code to join.'); return }
+    // A room created on another device/browser won't be in this client's local
+    // list — that's fine: the room is really a Jitsi room keyed by the code, so
+    // join by code directly. (Only truly empty codes are rejected.)
     setDisplayName(name.trim() || 'Guest')
     navigate({ to: '/live/$roomId', params: { roomId: c } })
   }
