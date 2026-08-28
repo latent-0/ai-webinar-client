@@ -118,28 +118,24 @@ export async function ask(prompt: string, options: AskOptions = {}): Promise<Ask
     }
   }
 
-  // Determine call order: first in allowedProviders list is primary
-  const [primary, ...rest] = allowedProviders
-  const fallback = rest[0] as ProviderName | undefined
-
-  // --- Primary attempt ---
-  try {
-    const answer = await callProvider(primary, prompt, context, tier, overrideModelId)
-    return { answer, provider: primary, usedFallback: false }
-  } catch (primaryErr) {
-    console.warn(`[ai] Primary provider "${primary}" failed:`, primaryErr)
-  }
-
-  // --- Fallback attempt ---
-  if (fallback) {
+  // Try every allowed provider in order until one succeeds, so a deployment
+  // configured with only ONE provider key (e.g. Anthropic only) still works —
+  // the unconfigured providers fail fast with 503 and we fall through to the
+  // one that is set. The first provider is the primary; the rest are fallbacks.
+  let lastError: unknown
+  for (let i = 0; i < allowedProviders.length; i++) {
+    const provider = allowedProviders[i]
     try {
-      const answer = await callProvider(fallback, prompt, context, tier)
-      return { answer, provider: fallback, usedFallback: true }
-    } catch (fallbackErr) {
-      console.warn(`[ai] Fallback provider "${fallback}" also failed:`, fallbackErr)
+      // Only the primary honours a UI model override; fallbacks use their default.
+      const answer = await callProvider(provider, prompt, context, tier, i === 0 ? overrideModelId : undefined)
+      return { answer, provider, usedFallback: i > 0 }
+    } catch (err) {
+      lastError = err
+      console.warn(`[ai] Provider "${provider}" failed:`, err)
     }
   }
 
+  console.warn('[ai] All allowed providers failed. Last error:', lastError)
   throw new Error(
     'AI service temporarily unavailable. Your work is saved — please try again.',
   )
