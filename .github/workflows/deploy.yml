@@ -1,0 +1,99 @@
+name: Deploy
+
+# LLP-126 — deploy to a chosen environment (dev or staging) via Vercel.
+#
+# Two ways to trigger:
+#   1. Manual: Actions -> Deploy -> "Run workflow", pick the environment and the
+#      branch to deploy from.
+#   2. Automatic: push to `main` -> dev, push to `staging` -> staging.
+#
+# Required repo secrets (Settings -> Secrets and variables -> Actions):
+#   VERCEL_TOKEN                 - a Vercel access token
+#   VERCEL_ORG_ID                - the Vercel org/team id
+#   VERCEL_PROJECT_ID_DEV        - project id for the dev environment
+#   VERCEL_PROJECT_ID_STAGING    - project id for the stable staging environment
+# See DEPLOYMENT.md for how these map to environments.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        required: true
+        default: dev
+        options: [dev, staging]
+      ref:
+        description: Branch or SHA to deploy (defaults to the selected branch)
+        type: string
+        required: false
+  push:
+    branches: [main, staging]
+
+jobs:
+  deploy:
+    name: Deploy to Vercel
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve target environment
+        id: target
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ENV="${{ github.event.inputs.environment }}"
+          elif [ "${{ github.ref_name }}" = "staging" ]; then
+            ENV="staging"
+          else
+            ENV="dev"
+          fi
+          echo "env=$ENV" >> "$GITHUB_OUTPUT"
+          echo "Deploying environment: $ENV"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Select Vercel project
+        id: project
+        run: |
+          if [ "${{ steps.target.outputs.env }}" = "staging" ]; then
+            echo "project_id=${{ secrets.VERCEL_PROJECT_ID_STAGING }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "project_id=${{ secrets.VERCEL_PROJECT_ID_DEV }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Preflight — verify secrets
+        run: |
+          if [ -z "${{ secrets.VERCEL_TOKEN }}" ] || [ -z "${{ secrets.VERCEL_ORG_ID }}" ] || [ -z "${{ steps.project.outputs.project_id }}" ]; then
+            echo "::error::Vercel secrets are not configured for the '${{ steps.target.outputs.env }}' environment. Add VERCEL_TOKEN, VERCEL_ORG_ID and VERCEL_PROJECT_ID_DEV/STAGING in repo settings. See DEPLOYMENT.md."
+            exit 1
+          fi
+
+      - name: Deploy
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ steps.project.outputs.project_id }}
+        run: |
+          npm i -g vercel@latest
+          # staging is the stable, client-facing environment -> production deploy.
+          # dev -> preview deploy for internal testing/review.
+          if [ "${{ steps.target.outputs.env }}" = "staging" ]; then
+            vercel pull --yes --environment=production --token="${{ secrets.VERCEL_TOKEN }}"
+            vercel build --prod --token="${{ secrets.VERCEL_TOKEN }}"
+            url=$(vercel deploy --prebuilt --prod --token="${{ secrets.VERCEL_TOKEN }}")
+          else
+            vercel pull --yes --environment=preview --token="${{ secrets.VERCEL_TOKEN }}"
+            vercel build --token="${{ secrets.VERCEL_TOKEN }}"
+            url=$(vercel deploy --prebuilt --token="${{ secrets.VERCEL_TOKEN }}")
+          fi
+          echo "Deployed to: $url"
+          echo "### Deployed to \`${{ steps.target.outputs.env }}\`: $url" >> "$GITHUB_STEP_SUMMARY"
