@@ -41,10 +41,17 @@ export default async function handler(req, res) {
 
     const payload = { ...generic }
     // In dev (no email provider, non-production) surface the link so the flow
-    // can be tested without an inbox. Never leak links in production.
-    if (result.dev && !isProduction()) {
+    // can be tested without an inbox. In production the link is normally never
+    // leaked — EXCEPT when ALLOW_DEV_SIGNIN is explicitly set, a deliberate
+    // demo-only escape hatch for showcasing the app before an email provider
+    // (RESEND_API_KEY) is wired up. Remove that env var to lock sign-in down.
+    const allowDevSignin =
+      process.env.ALLOW_DEV_SIGNIN === '1' || process.env.ALLOW_DEV_SIGNIN === 'true'
+    if (result.dev && (!isProduction() || allowDevSignin)) {
       payload.devLink = link
-      payload.note = 'Dev mode: no email provider configured. Use devLink to sign in.'
+      payload.note = isProduction()
+        ? 'Demo mode: email delivery not configured. Use this link to sign in.'
+        : 'Dev mode: no email provider configured. Use devLink to sign in.'
     }
     if (!usingDurableStore() && !usingSupabaseStore() && !isProduction()) {
       payload.storeWarning = 'Using in-memory token store (dev only). Configure Vercel KV or Supabase for production.'
