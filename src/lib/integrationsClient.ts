@@ -8,7 +8,7 @@
  */
 
 /** Kick off the OAuth connect flow (grants Calendar + Drive read scopes). */
-export const GOOGLE_CONNECT_URL = '/api/auth/google/connect'
+export const GOOGLE_CONNECT_URL = '/api/auth/google/start?flow=connect'
 
 export interface IntegrationStatus {
   google: { configured: boolean; connected: boolean }
@@ -34,7 +34,7 @@ export interface DriveFile {
 
 export async function getIntegrationStatus(): Promise<IntegrationStatus> {
   try {
-    const r = await fetch('/api/integrations/status', { credentials: 'same-origin' })
+    const r = await fetch('/api/integrations/google?action=status', { credentials: 'same-origin' })
     if (!r.ok) throw new Error(String(r.status))
     return await r.json()
   } catch {
@@ -44,7 +44,7 @@ export async function getIntegrationStatus(): Promise<IntegrationStatus> {
 
 export async function getCalendarEvents(): Promise<{ connected: boolean; events: CalendarEvent[] }> {
   try {
-    const r = await fetch('/api/integrations/calendar', { credentials: 'same-origin' })
+    const r = await fetch('/api/integrations/google?action=calendar', { credentials: 'same-origin' })
     if (!r.ok) throw new Error(String(r.status))
     return await r.json()
   } catch {
@@ -54,7 +54,7 @@ export async function getCalendarEvents(): Promise<{ connected: boolean; events:
 
 export async function getDriveFiles(): Promise<{ connected: boolean; files: DriveFile[] }> {
   try {
-    const r = await fetch('/api/integrations/drive', { credentials: 'same-origin' })
+    const r = await fetch('/api/integrations/google?action=drive', { credentials: 'same-origin' })
     if (!r.ok) throw new Error(String(r.status))
     return await r.json()
   } catch {
@@ -64,6 +64,6 @@ export async function getDriveFiles(): Promise<{ connected: boolean; files: Driv
 
 export async function disconnectGoogle(): Promise<void> {
   try {
-    await fetch('/api/integrations/disconnect', { method: 'POST', credentials: 'same-origin' })
+    await fetch('/api/integrations/google?action=disconnect', { method: 'POST', credentials: 'same-origin' })
   } catch { /* best-effort */ }
 }
