@@ -10,6 +10,7 @@ import {
   getBaseUrl, signToken, sessionCookie, verifyToken,
   isEmailAllowed, SESSION_TTL_SEC,
 } from '../../_lib/auth.js'
+import { tokenCookie } from '../../_lib/googleTokens.js'
 
 export default async function handler(req, res) {
   const redirect = (path) => {
@@ -23,8 +24,9 @@ export default async function handler(req, res) {
   if (!clientId || !clientSecret) return redirect('/?auth=error')
 
   const code = req.query?.code
-  const state = req.query?.state
-  if (!code || !verifyToken(String(state))) return redirect('/?auth=invalid')
+  const statePayload = verifyToken(String(req.query?.state))
+  if (!code || !statePayload) return redirect('/?auth=invalid')
+  const isConnect = statePayload.flow === 'connect'
 
   try {
     const redirectUri = `${getBaseUrl(req)}/api/auth/google/callback`
@@ -44,15 +46,29 @@ export default async function handler(req, res) {
 
     const claims = decodeJwtPayload(tokens.id_token)
     const email = claims?.email
-    if (!email || claims.email_verified === false) return redirect('/?auth=invalid')
-    if (!isEmailAllowed(email)) return redirect('/?auth=forbidden')
+    if (!email || claims.email_verified === false) return redirect(isConnect ? '/settings?connected=invalid' : '/?auth=invalid')
+    if (!isEmailAllowed(email)) return redirect(isConnect ? '/settings?connected=forbidden' : '/?auth=forbidden')
 
     const session = signToken({ sub: email, email, method: 'google' }, SESSION_TTL_SEC)
+
+    if (isConnect) {
+      // Connecting Calendar + Drive: seal the tokens in the integration cookie
+      // AND sign the user in, then return to Settings.
+      const bundle = {
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        expiry: Date.now() + (tokens.expires_in || 3600) * 1000,
+        scope: tokens.scope,
+      }
+      res.setHeader('Set-Cookie', [sessionCookie(session), tokenCookie(bundle)])
+      return redirect('/settings?connected=google')
+    }
+
     res.setHeader('Set-Cookie', sessionCookie(session))
     return redirect('/?auth=success')
   } catch (err) {
     console.error('[auth] google callback failed:', err)
-    return redirect('/?auth=error')
+    return redirect(isConnect ? '/settings?connected=error' : '/?auth=error')
   }
 }
 

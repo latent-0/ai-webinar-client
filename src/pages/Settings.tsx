@@ -1,8 +1,10 @@
-import { Link2, ShieldCheck, Trash2, Download } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Link2, ShieldCheck, Trash2, Download, Calendar, HardDrive, Check, Loader2 } from 'lucide-react'
 import SectionShell from '../components/SectionShell'
 import { sectionById } from '../lib/ia'
 import { usePersistStore } from '../store/persist'
 import { CLAUDE_MODELS } from '../lib/claude'
+import { getIntegrationStatus, disconnectGoogle, GOOGLE_CONNECT_URL, type IntegrationStatus } from '../lib/integrationsClient'
 
 /**
  * Settings (LLP-121) — account & preferences. Preferences persist to the
@@ -95,23 +97,57 @@ function Preferences() {
 }
 
 function Integrations() {
-  // No integration is wired to a real OAuth/connect flow yet, so none is shown
-  // as "Connected" and the action is honestly labelled "Coming soon" rather
-  // than a button that looks live but does nothing.
-  const items = [
-    { name: 'Google Drive', desc: 'Sync sources and files' },
-    { name: 'Calendar', desc: 'See sessions & deadlines' },
-    { name: 'API & Webhooks', desc: 'Automate with your stack' },
-  ]
+  const [status, setStatus] = useState<IntegrationStatus | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => { void getIntegrationStatus().then(setStatus) }, [])
+
+  const google = status?.google
+  async function disconnect() {
+    setBusy(true)
+    await disconnectGoogle()
+    setStatus(await getIntegrationStatus())
+    setBusy(false)
+  }
+
   return (
     <div className="max-w-xl space-y-2">
-      {items.map((i) => (
-        <div key={i.name} className="flex items-center gap-3 p-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
-          <div className="w-9 h-9 rounded-xl bg-[var(--surface-3)] flex items-center justify-center"><Link2 size={16} className="text-[var(--muted)]" /></div>
-          <div className="flex-1"><p className="text-sm font-medium">{i.name}</p><p className="text-xs text-[var(--muted)]">{i.desc}</p></div>
-          <span className="text-xs px-3 py-1.5 rounded-lg font-medium bg-[var(--surface-3)] text-[var(--muted)]">Coming soon</span>
+      {/* Google Calendar + Drive — one connection grants both (read-only). */}
+      <div className="p-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-[var(--surface-3)] flex items-center justify-center shrink-0">
+            <Calendar size={16} className="text-[var(--muted)]" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium">Google Calendar &amp; Drive</p>
+            <p className="text-xs text-[var(--muted)]">See upcoming events in Live and your recent Drive files in Library. Read-only.</p>
+          </div>
+          {!status ? (
+            <Loader2 size={15} className="animate-spin text-[var(--muted)] shrink-0" />
+          ) : !google?.configured ? (
+            <span className="text-xs px-3 py-1.5 rounded-lg font-medium bg-[var(--surface-3)] text-[var(--muted)] shrink-0">Not configured</span>
+          ) : google.connected ? (
+            <button onClick={disconnect} disabled={busy} className="text-xs px-3 py-1.5 rounded-lg font-medium bg-[var(--surface-3)] hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 disabled:opacity-60 shrink-0">
+              {busy ? 'Disconnecting…' : 'Disconnect'}
+            </button>
+          ) : (
+            <a href={GOOGLE_CONNECT_URL} className="text-xs px-3 py-1.5 rounded-lg font-medium bg-indigo-600 text-white hover:bg-indigo-500 shrink-0">Connect</a>
+          )}
         </div>
-      ))}
+        {google?.connected && (
+          <div className="flex items-center gap-3 mt-3 pt-3 border-t border-[var(--border)] text-xs text-emerald-600">
+            <span className="inline-flex items-center gap-1"><Check size={13} /> Calendar</span>
+            <span className="inline-flex items-center gap-1"><HardDrive size={13} /> Drive</span>
+            <span className="text-[var(--muted)]">connected</span>
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center gap-3 p-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
+        <div className="w-9 h-9 rounded-xl bg-[var(--surface-3)] flex items-center justify-center"><Link2 size={16} className="text-[var(--muted)]" /></div>
+        <div className="flex-1"><p className="text-sm font-medium">API &amp; Webhooks</p><p className="text-xs text-[var(--muted)]">Automate with your stack</p></div>
+        <span className="text-xs px-3 py-1.5 rounded-lg font-medium bg-[var(--surface-3)] text-[var(--muted)]">Coming soon</span>
+      </div>
     </div>
   )
 }

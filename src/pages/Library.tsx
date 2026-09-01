@@ -1,8 +1,9 @@
-import { useState } from 'react'
-import { Bookmark, Trash2, Plus, FileText, Brain, Database, Clock, X } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Bookmark, Trash2, Plus, FileText, Brain, Database, Clock, X, HardDrive, ExternalLink, Loader2 } from 'lucide-react'
 import SectionShell from '../components/SectionShell'
 import { sectionById } from '../lib/ia'
 import { usePersistStore, type AiMemory } from '../store/persist'
+import { getDriveFiles, GOOGLE_CONNECT_URL, type DriveFile } from '../lib/integrationsClient'
 
 /**
  * Library (LLP-118) — My content & history, notes, sources, AI memory.
@@ -151,19 +152,71 @@ function SourcesPanel() {
     { name: 'Notes', count: notes.length, hint: 'Notes you have written or generated.' },
   ]
   return (
-    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-      {sources.map((s) => (
-        <div key={s.name} className="p-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
-          <div className="flex items-center gap-2 mb-2"><Database size={15} className="text-[var(--muted)]" /><p className="text-sm font-semibold">{s.name}</p></div>
-          <p className="text-2xl font-bold">{s.count}</p>
-          <p className="text-xs text-[var(--muted)] mt-1">{s.hint}</p>
-        </div>
-      ))}
-      <div className="p-4 rounded-2xl border border-dashed border-[var(--border)] bg-[var(--surface)] flex flex-col">
-        <div className="flex items-center gap-2 mb-2"><Database size={15} className="text-[var(--muted)]" /><p className="text-sm font-semibold">Google Drive</p></div>
-        <p className="text-xs text-[var(--muted)] flex-1">Connect an external source to import content.</p>
-        <span className="inline-block mt-2 text-[10px] px-2 py-0.5 rounded-full bg-[var(--surface-3)] text-[var(--muted)] w-fit">Not connected</span>
+    <div className="space-y-4">
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {sources.map((s) => (
+          <div key={s.name} className="p-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
+            <div className="flex items-center gap-2 mb-2"><Database size={15} className="text-[var(--muted)]" /><p className="text-sm font-semibold">{s.name}</p></div>
+            <p className="text-2xl font-bold">{s.count}</p>
+            <p className="text-xs text-[var(--muted)] mt-1">{s.hint}</p>
+          </div>
+        ))}
       </div>
+      <DriveSources />
+    </div>
+  )
+}
+
+const FILE_KINDS: Record<string, string> = {
+  'application/vnd.google-apps.document': 'Doc',
+  'application/vnd.google-apps.spreadsheet': 'Sheet',
+  'application/vnd.google-apps.presentation': 'Slides',
+  'application/vnd.google-apps.folder': 'Folder',
+  'application/pdf': 'PDF',
+}
+function fileKind(mime: string) {
+  return FILE_KINDS[mime] || mime.split('/').pop()?.toUpperCase().slice(0, 6) || 'File'
+}
+
+/** Real Google Drive files (read-only) when the user has connected Google. */
+function DriveSources() {
+  const [state, setState] = useState<{ loading: boolean; connected: boolean; files: DriveFile[] }>({ loading: true, connected: false, files: [] })
+
+  useEffect(() => {
+    let stop = false
+    void getDriveFiles().then((r) => { if (!stop) setState({ loading: false, connected: r.connected, files: r.files }) })
+    return () => { stop = true }
+  }, [])
+
+  return (
+    <div className="p-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
+      <div className="flex items-center gap-2 mb-3">
+        <HardDrive size={15} className="text-[var(--muted)]" />
+        <p className="text-sm font-semibold flex-1">Google Drive</p>
+        {state.loading ? (
+          <Loader2 size={14} className="animate-spin text-[var(--muted)]" />
+        ) : state.connected ? (
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600">Connected</span>
+        ) : (
+          <a href={GOOGLE_CONNECT_URL} className="text-xs px-3 py-1.5 rounded-lg font-medium bg-indigo-600 text-white hover:bg-indigo-500">Connect</a>
+        )}
+      </div>
+      {state.loading ? null : !state.connected ? (
+        <p className="text-xs text-[var(--muted)]">Connect Google to browse your recent Drive files here (read-only).</p>
+      ) : state.files.length === 0 ? (
+        <p className="text-xs text-[var(--muted)]">No files found in your Drive.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {state.files.map((f) => (
+            <a key={f.id} href={f.url ?? undefined} target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-2 p-2 rounded-lg hover:bg-[var(--surface-3)] transition-colors group">
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[var(--surface-3)] text-[var(--muted)] shrink-0 w-14 text-center">{fileKind(f.mimeType)}</span>
+              <span className="text-sm flex-1 truncate">{f.name}</span>
+              <ExternalLink size={12} className="text-[var(--muted)] opacity-0 group-hover:opacity-100 shrink-0" />
+            </a>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

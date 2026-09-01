@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
-  Radio, Plus, Users, ArrowRight, Copy, Check, Calendar, ShieldCheck,
+  Radio, Plus, Users, ArrowRight, Copy, Check, Calendar, ShieldCheck, ExternalLink, Loader2, MapPin,
 } from 'lucide-react'
 import { useAppStore } from '../store'
 import { usePersistStore } from '../store/persist'
@@ -10,6 +10,7 @@ import SectionShell from '../components/SectionShell'
 import { sectionById } from '../lib/ia'
 import { getPresence } from '../lib/presenceClient'
 import type { Presence } from '../lib/monitor'
+import { getCalendarEvents, GOOGLE_CONNECT_URL, type CalendarEvent } from '../lib/integrationsClient'
 
 /**
  * Live section (LLP-115) — interactive experiences across Upcoming / Live Now /
@@ -143,17 +144,7 @@ function RoomCard({ id }: { id: string }) {
 function EventList({ filter }: { filter: 'upcoming' | 'past' }) {
   const rooms = useAppStore((s) => s.rooms)
 
-  if (filter === 'upcoming') {
-    // No scheduling backend yet — show an honest empty state rather than
-    // fabricated "Tomorrow 3pm" events with dead buttons.
-    return (
-      <div className="text-center py-16">
-        <Calendar size={22} className="mx-auto mb-2 text-[var(--muted)] opacity-50" />
-        <p className="text-sm text-[var(--muted)]">No upcoming sessions scheduled.</p>
-        <p className="text-xs text-[var(--muted)] mt-1">Start a session from “Live now” to go live instantly.</p>
-      </div>
-    )
-  }
+  if (filter === 'upcoming') return <UpcomingEvents />
 
   const list = rooms.filter((r) => r.state === 'ended')
   if (list.length === 0) return <div className="text-center py-16 text-sm text-[var(--muted)]">No past sessions yet.</div>
@@ -163,6 +154,65 @@ function EventList({ filter }: { filter: 'upcoming' | 'past' }) {
         <div key={r.id} className="flex items-center gap-3 p-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
           <Radio size={16} className="text-[var(--muted)]" />
           <div className="flex-1"><p className="text-sm font-medium">{r.name}</p><p className="text-xs text-[var(--muted)]">{formatDate(r.createdAt)}{r.host ? ` · ${r.host}` : ''}</p></div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function fmtEventTime(ev: CalendarEvent): string {
+  if (!ev.start) return ''
+  const d = new Date(ev.start)
+  if (Number.isNaN(d.getTime())) return ''
+  return ev.allDay
+    ? d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+    : d.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+/** Real upcoming events from the user's Google Calendar (read-only) when
+ *  connected; otherwise an honest empty state with a Connect prompt. */
+function UpcomingEvents() {
+  const [state, setState] = useState<{ loading: boolean; connected: boolean; events: CalendarEvent[] }>({ loading: true, connected: false, events: [] })
+
+  useEffect(() => {
+    let stop = false
+    void getCalendarEvents().then((r) => { if (!stop) setState({ loading: false, connected: r.connected, events: r.events }) })
+    return () => { stop = true }
+  }, [])
+
+  if (state.loading) return <div className="py-16 flex justify-center"><Loader2 size={20} className="animate-spin text-[var(--muted)]" /></div>
+
+  if (!state.connected) {
+    return (
+      <div className="text-center py-14">
+        <Calendar size={22} className="mx-auto mb-2 text-[var(--muted)] opacity-50" />
+        <p className="text-sm text-[var(--muted)]">Connect Google Calendar to see your upcoming events here.</p>
+        <a href={GOOGLE_CONNECT_URL} className="inline-block mt-3 text-xs px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-500">Connect Google Calendar</a>
+      </div>
+    )
+  }
+
+  if (state.events.length === 0) {
+    return <div className="text-center py-16 text-sm text-[var(--muted)]">No upcoming events on your calendar.</div>
+  }
+
+  return (
+    <div className="space-y-2">
+      {state.events.map((e) => (
+        <div key={e.id} className="flex items-center gap-3 p-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
+          <Calendar size={16} className="text-indigo-500 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium truncate">{e.title}</p>
+            <p className="text-xs text-[var(--muted)] flex items-center gap-2">
+              {fmtEventTime(e)}
+              {e.location && <span className="inline-flex items-center gap-1 truncate"><MapPin size={11} /> {e.location}</span>}
+            </p>
+          </div>
+          {e.url && (
+            <a href={e.url} target="_blank" rel="noopener noreferrer" title="Open in Google Calendar" className="p-1.5 rounded-lg hover:bg-[var(--surface-3)] text-[var(--muted)] shrink-0">
+              <ExternalLink size={14} />
+            </a>
+          )}
         </div>
       ))}
     </div>
