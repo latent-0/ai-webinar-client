@@ -47,7 +47,7 @@ function PlayHome() {
       <div>
         <h3 className="text-sm font-semibold mb-3">Recent play sessions</h3>
         <div className="space-y-2">
-          {['Design a social campaign', 'Analyse Q4 sales', 'Build a landing page'].map((s, i) => (
+          {['Build a Search campaign', 'Write a responsive search ad', 'Plan a negative keyword list'].map((s, i) => (
             <div key={i} className="flex items-center gap-3 p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)]">
               <Gamepad2 size={15} className="text-violet-500" />
               <p className="text-sm font-medium flex-1">{s}</p>
@@ -93,10 +93,10 @@ function Scenarios() {
   const [generated, setGenerated] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const library = [
-    { title: 'Design a social media campaign', level: 'Beginner' },
-    { title: 'Analyse sales data & forecast Q4', level: 'Intermediate' },
-    { title: 'Build a landing page from scratch', level: 'Intermediate' },
-    { title: 'Master audio mixing fundamentals', level: 'Advanced' },
+    { title: 'Build your first Search campaign', level: 'Beginner' },
+    { title: 'Structure ad groups & keywords', level: 'Intermediate' },
+    { title: 'Set up conversion tracking', level: 'Intermediate' },
+    { title: 'Migrate to Target ROAS bidding', level: 'Advanced' },
   ]
   async function gen() {
     if (!prompt.trim() || loading) return

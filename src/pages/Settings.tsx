@@ -135,7 +135,6 @@ function AiSettings() {
         <select value={settings.aiModelPreference} onChange={(e) => setSettings({ aiModelPreference: e.target.value })}
           className="px-3 py-1.5 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-sm focus:outline-none">
           {CLAUDE_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
-          <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
         </select>
       </Row>
       <Row label="Allow Claude" hint="Privacy guardrail for the agent core.">

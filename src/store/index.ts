@@ -42,39 +42,9 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set) => ({
-  rooms: [
-    {
-      id: 'webinar-ai-2025',
-      name: 'AI in 2025: What You Need to Know',
-      participants: 12,
-      createdAt: new Date(),
-      isActive: true,
-      state: 'active',
-      tokenUsage: 0,
-      tokenCeiling: 50000,
-    },
-    {
-      id: 'dental-practice-live',
-      name: 'Modern Dental Practice Webinar',
-      participants: 6,
-      createdAt: new Date(Date.now() - 3600000),
-      isActive: true,
-      domain: 'dental',
-      state: 'active',
-      tokenUsage: 0,
-      tokenCeiling: 50000,
-    },
-    {
-      id: 'audit-workshop',
-      name: 'Audit Workshop: Best Practices',
-      participants: 0,
-      createdAt: new Date(Date.now() - 86400000),
-      isActive: false,
-      state: 'ended',
-      tokenUsage: 0,
-      tokenCeiling: 50000,
-    },
-  ],
+  // No seeded/dummy rooms and no fake attendee counts (LLP-144 / LLP-145).
+  // The lobby shows real sessions only — the ones a host actually starts.
+  rooms: [],
   learnMessages: [],
   playMessages: [],
   liveAiMessages: [],

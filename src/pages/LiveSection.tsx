@@ -29,6 +29,7 @@ export default function LiveSection() {
 
 function JoinButton() {
   const setDisplayName = useAppStore((s) => s.setDisplayName)
+  const rooms = useAppStore((s) => s.rooms)
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [code, setCode] = useState('')
@@ -39,11 +40,14 @@ function JoinButton() {
     e.preventDefault()
     const c = code.trim()
     if (!c) { setErr('Enter a room code to join.'); return }
-    // A room created on another device/browser won't be in this client's local
-    // list — that's fine: the room is really a Jitsi room keyed by the code, so
-    // join by code directly. (Only truly empty codes are rejected.)
+    // Only join a session that actually exists. A typo or junk code must NOT
+    // open a room or spin up a public Jitsi meeting (LLP-143). Attendees on
+    // other devices join via the host's share link (which points straight at
+    // the room), so the typed code only needs to match a known session here.
+    const known = rooms.find((r) => r.id.toLowerCase() === c.toLowerCase() && r.state === 'active')
+    if (!known) { setErr('Session not found. Check the code, or use the host’s share link.'); return }
     setDisplayName(name.trim() || 'Guest')
-    navigate({ to: '/live/$roomId', params: { roomId: c } })
+    navigate({ to: '/live/$roomId', params: { roomId: known.id } })
   }
 
   return (
@@ -91,23 +95,29 @@ function CreateSession() {
   const navigate = useNavigate()
   const [name, setName] = useState('')
   const [host, setHost] = useState('')
+  const [err, setErr] = useState<string | null>(null)
 
   function create(e: React.FormEvent) {
     e.preventDefault()
-    if (!name.trim()) return
+    const n = name.trim()
+    // Empty Start used to do nothing silently — now it explains why (LLP-143).
+    if (!n) { setErr('Enter a session name to start.'); return }
     setDisplayName(host.trim() || 'Host')
     const id = generateRoomId()
-    addRoom({ id, name: name.trim(), participants: 1, createdAt: new Date(), isActive: true, state: 'active', tokenUsage: 0, tokenCeiling: 50000, host: host.trim() || 'Host' })
-    logActivity('live', `Started session "${name.trim()}"`)
+    addRoom({ id, name: n, participants: 1, createdAt: new Date(), isActive: true, state: 'active', tokenUsage: 0, tokenCeiling: 50000, host: host.trim() || 'Host' })
+    logActivity('live', `Started session "${n}"`)
     navigate({ to: '/live/$roomId', params: { roomId: id } })
   }
 
   return (
-    <form onSubmit={create} className="p-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] flex flex-col sm:flex-row gap-2">
-      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New session name…" className="flex-1 px-3 py-2 rounded-xl bg-[var(--bg)] border border-[var(--border)] text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-      <input value={host} onChange={(e) => setHost(e.target.value)} placeholder="Host name" className="sm:w-40 px-3 py-2 rounded-xl bg-[var(--bg)] border border-[var(--border)] text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-      <button type="submit" className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold"><Plus size={15} /> Start</button>
-    </form>
+    <div>
+      <form onSubmit={create} className="p-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] flex flex-col sm:flex-row gap-2">
+        <input value={name} onChange={(e) => { setName(e.target.value); if (err) setErr(null) }} placeholder="New session name…" className="flex-1 px-3 py-2 rounded-xl bg-[var(--bg)] border border-[var(--border)] text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        <input value={host} onChange={(e) => setHost(e.target.value)} placeholder="Host name" className="sm:w-40 px-3 py-2 rounded-xl bg-[var(--bg)] border border-[var(--border)] text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        <button type="submit" className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold"><Plus size={15} /> Start</button>
+      </form>
+      {err && <p className="mt-2 text-xs text-red-500">{err}</p>}
+    </div>
   )
 }
 

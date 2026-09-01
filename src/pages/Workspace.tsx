@@ -6,7 +6,7 @@ import {
   Send, Users, X, ChevronLeft, ChevronRight,
   Mic, MicOff, Video, VideoOff,
   PhoneOff, Radio, Wrench, BookOpen, ExternalLink,
-  Cpu, Check as CheckIcon, Crown,
+  Crown, MessageSquare, LayoutGrid,
 } from 'lucide-react'
 import { useAppStore } from '../store'
 import { usePersistStore } from '../store/persist'
@@ -24,6 +24,10 @@ interface JitsiParticipant {
   role?: string
   roomName?: string
   muted?: boolean
+  // ── Chat event payload fields (incomingMessage) ──
+  nick?: string
+  from?: string
+  message?: string
 }
 
 declare global {
@@ -39,10 +43,16 @@ declare global {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface ChatMsg  { id: string; user: string; avatar: string; time: string; content: string }
+/** A message in the participant chat. Real people only — the AI lives in the
+ *  Assistant panel, never here (LLP-144). */
+interface ChatMsg  { id: string; user: string; avatar: string; time: string; content: string; self?: boolean }
 interface AIMsg    { id: string; role: 'user' | 'assistant'; content: string }
 /** A person in the room (T-64 / LLP-70). */
 interface RosterEntry { id: string; name: string; isLocal: boolean; isHost: boolean }
+
+/** Which surface fills the main stage. Talking → video large; working → the
+ *  Sandbox fills the stage with the speaker in a corner (LLP-139). */
+type StageView = 'stage' | 'sandbox'
 
 // ─── Sandbox blocks ───────────────────────────────────────────────────────────
 
@@ -68,41 +78,35 @@ const COLORS: Record<string, { bg: string; border: string; activeBorder: string;
 
 // ─── Static data ──────────────────────────────────────────────────────────────
 
-const INIT_CHAT: ChatMsg[] = [
-  { id: '1', user: 'Sophie', avatar: 'S', time: '10:34 AM', content: 'This workflow is 🔥' },
-  { id: '2', user: 'Alex',   avatar: 'A', time: '10:34 AM', content: 'Can you show the prompt again?' },
-  { id: '3', user: 'Jordan', avatar: 'J', time: '10:35 AM', content: 'Loving the Sandbox!' },
-]
-
-const AVATAR_COLORS: Record<string, string> = { S: 'bg-rose-500', A: 'bg-indigo-500', J: 'bg-emerald-500', T: 'bg-amber-500' }
+const AVATAR_COLORS = ['bg-rose-500', 'bg-indigo-500', 'bg-emerald-500', 'bg-amber-500', 'bg-sky-500', 'bg-violet-500']
+/** Deterministic per-name avatar colour (no seeded/fake identities). */
+function avatarColor(name: string): string {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
+  return AVATAR_COLORS[h % AVATAR_COLORS.length]
+}
 
 const SESSION_NOTES = [
   'Clear goals unlock better AI outputs.',
   'More context in Inputs means richer Insights.',
   'Iterate with small changes, not big jumps.',
-  'Test across models for different results.',
+  'Ground every answer in real account data.',
   'Keep human judgement in the loop.',
   'Present your thinking — output shapes the next goal.',
 ]
 
 const SOURCES = [
-  { title: 'AI Workflow Design Patterns', domain: 'arxiv.org' },
-  { title: 'Prompt Engineering Guide', domain: 'promptingguide.ai' },
-  { title: 'Midjourney V6 Docs', domain: 'midjourney.com' },
-  { title: 'Creative Process Frameworks', domain: 'ideo.com' },
+  { title: 'Google Ads Help — Auction & Ad Rank', domain: 'support.google.com' },
+  { title: 'Smart Bidding best practices', domain: 'support.google.com' },
+  { title: 'Quality Score explained', domain: 'support.google.com' },
+  { title: 'Search Terms & negative keywords', domain: 'support.google.com' },
 ]
 
 const PROMPT_LIBRARY = [
-  { label: 'Cinematic portrait', prompt: 'Ultra-realistic cinematic portrait, golden hour lighting, shallow depth of field, 85mm lens' },
-  { label: 'Abstract tech',      prompt: 'Abstract technology visualization, neural network nodes, glowing edges, dark background, 8k' },
-  { label: 'Product hero',       prompt: 'Luxury product hero shot, studio lighting, white background, reflective surface' },
-  { label: 'Sci-fi landscape',   prompt: 'Epic sci-fi landscape, distant planets, alien flora, volumetric fog, concept art style' },
-]
-
-const BUILD_MODELS = [
-  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', badge: 'Fast' },
-  { id: 'gemini-2.5-pro',   label: 'Gemini 2.5 Pro',   badge: 'Smart' },
-  { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', badge: 'Stable' },
+  { label: 'Responsive Search Ad', prompt: 'Write 15 headlines and 4 descriptions for a responsive search ad for a Google Ads campaign selling running shoes, with a clear CTA.' },
+  { label: 'Negative keyword list', prompt: 'Suggest a starter negative keyword list for a lead-gen Search campaign for an accounting firm.' },
+  { label: 'Campaign structure',    prompt: 'Propose a Google Ads account structure (campaigns, ad groups, keywords) for an ecommerce store with 3 product lines.' },
+  { label: 'Bidding strategy',      prompt: 'Recommend a bidding strategy for a new Search campaign with no conversion history, and the migration path to tROAS.' },
 ]
 
 const BUILD_TOOLS = [
@@ -116,6 +120,10 @@ function estimateTokens(...texts: string[]) {
   return Math.ceil(texts.join('').length / 4)
 }
 
+function nowLabel() {
+  return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function Workspace() {
@@ -124,22 +132,23 @@ export default function Workspace() {
   const { displayName, rooms, updateRoomTokens } = useAppStore()
   const room = rooms.find(r => r.id === roomId)
 
+  // ── Stage / Sandbox view (LLP-139)
+  const [view, setView] = useState<StageView>('stage')
+
   // ── Sandbox blocks
   const [expandedBlock, setExpandedBlock] = useState<BlockId | null>(null)
   const [blockContent, setBlockContent]   = useState<Record<string, string>>({})
 
-  // ── Panel state
-  const [liveCollapsed, setLiveCollapsed]           = useState(false)
-  const [assistantCollapsed, setAssistantCollapsed] = useState(false)
-  const [assistantTab, setAssistantTab]             = useState<'chat' | 'notes' | 'sources'>('chat')
-  const [buildOpen, setBuildOpen]                   = useState(false)
+  // ── Right rail
+  const [railCollapsed, setRailCollapsed] = useState(false)
+  const [railTab, setRailTab]             = useState<'assistant' | 'chat' | 'notes' | 'sources'>('assistant')
+  const [buildOpen, setBuildOpen]         = useState(false)
 
-  // ── Chat (Live panel)
-  const [chatMsgs, setChatMsgs]   = useState<ChatMsg[]>(INIT_CHAT)
+  // ── Participant chat (real people, via Jitsi — LLP-144)
+  const [chatMsgs, setChatMsgs]   = useState<ChatMsg[]>([])
   const [chatInput, setChatInput] = useState('')
-  const [chatLoading, setChatLoading] = useState(false)
 
-  // ── Assistant (right panel)
+  // ── Assistant (AI)
   const [assistantMsgs, setAssistantMsgs]       = useState<AIMsg[]>([])
   const [assistantInput, setAssistantInput]     = useState('')
   const [assistantLoading, setAssistantLoading] = useState(false)
@@ -149,11 +158,10 @@ export default function Workspace() {
   const [transcriptLoading, setTranscriptLoading] = useState(false)
 
   // ── Build mode
-  const [buildTab, setBuildTab]         = useState<'api' | 'prompts' | 'models' | 'tools'>('api')
-  const [apiBody, setApiBody]           = useState('{\n  "prompt": "Futuristic race car, motion blur, cinematic",\n  "style": "cinematic",\n  "ar": "16:9"\n}')
+  const [buildTab, setBuildTab]         = useState<'api' | 'prompts' | 'tools'>('api')
+  const [apiBody, setApiBody]           = useState('{\n  "prompt": "Write a responsive search ad for running shoes",\n  "style": "concise",\n  "count": 3\n}')
   const [apiLoading, setApiLoading]     = useState(false)
   const [apiResponse, setApiResponse]   = useState<string | null>(null)
-  const [activeModel, setActiveModel]   = useState('gemini-2.5-flash')
   const [enabledTools, setEnabledTools] = useState(['web_search', 'image_gen'])
 
   // ── Misc
@@ -180,7 +188,7 @@ export default function Workspace() {
   const activeBlock = expandedBlock ? BLOCKS.find(b => b.id === expandedBlock) : null
 
   // ── Scroll to bottom
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [chatMsgs])
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [chatMsgs, railTab])
   useEffect(() => { assistantEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [assistantMsgs])
 
   // ── Reset assistant messages when block changes
@@ -197,7 +205,9 @@ export default function Workspace() {
     document.body.appendChild(s)
   }, [])
 
-  // ── Init Jitsi
+  // ── Init Jitsi. The container lives OUTSIDE the collapsible rail and is never
+  //    conditionally unmounted, so collapsing a panel or switching the stage
+  //    view can no longer end the call (LLP-141).
   useEffect(() => {
     if (!jitsiLoaded || !jitsiContainerRef.current) return
     if (jitsiApiRef.current) { jitsiApiRef.current.dispose(); jitsiApiRef.current = null }
@@ -216,7 +226,7 @@ export default function Workspace() {
       interfaceConfigOverwrite: {
         MOBILE_APP_PROMO: false,
         SHOW_CHROME_EXTENSION_BANNER: false,
-        FILM_STRIP_MAX_HEIGHT: 60,
+        FILM_STRIP_MAX_HEIGHT: 80,
       },
     })
     // Presence + host identification (T-64 / LLP-70). Rebuild the roster from
@@ -255,6 +265,17 @@ export default function Workspace() {
       // camera that never started (permission denied) shows as off (LLP-76).
       audioMuteStatusChanged: (e) => { if (typeof e?.muted === 'boolean') setMicMuted(e.muted) },
       videoMuteStatusChanged: (e) => { if (typeof e?.muted === 'boolean') setCamMuted(e.muted) },
+      // Real, in-room chat from other participants (LLP-144). Our own outgoing
+      // messages are echoed locally on send, so we only render remote ones here.
+      incomingMessage: (e) => {
+        const content = (e?.message || '').trim()
+        if (!content) return
+        const user = e?.nick || e?.from || 'Guest'
+        setChatMsgs(m => [
+          ...m,
+          { id: `in-${Date.now()}-${m.length}`, user, avatar: user.charAt(0).toUpperCase(), time: nowLabel(), content },
+        ])
+      },
     })
     jitsiApiRef.current = api
     const timer = setInterval(reconcile, 2000)
@@ -277,10 +298,7 @@ export default function Workspace() {
     return () => clearInterval(t)
   }, [roomId, displayName])
 
-  // Graceful media-permission handling (LLP-76 / T-70). If the browser reports
-  // camera/mic as blocked, surface a dismissible notice; the session stays
-  // fully usable (watch + chat) regardless. Best-effort: the Permissions API
-  // is not available everywhere, in which case we defer to Jitsi's own UI.
+  // Graceful media-permission handling (LLP-76 / T-70).
   useEffect(() => {
     let cancelled = false
     const perms = navigator.permissions
@@ -308,24 +326,20 @@ export default function Workspace() {
   }, [])
 
   // ── Handlers
-  const sendChat = useCallback(async (e: React.FormEvent) => {
+  /** Send a real chat message to everyone in the room via Jitsi. No AI reply —
+   *  the AI answers in the Assistant panel only (LLP-144). */
+  const sendChat = useCallback((e: React.FormEvent) => {
     e.preventDefault()
-    if (!chatInput.trim() || chatLoading) return
-    if (room && room.tokenUsage >= room.tokenCeiling) {
-      setChatMsgs(m => [...m, { id: Date.now().toString(), user: 'AI', avatar: 'AI', time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), content: 'Token budget reached for this session. AI assistance is unavailable.' }])
-      return
-    }
-    const text = chatInput.trim(); setChatInput('')
-    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    setChatMsgs(m => [...m, { id: Date.now().toString(), user: displayName || 'You', avatar: (displayName || 'Y')[0].toUpperCase(), time: now, content: text }])
-    setChatLoading(true)
-    const ctx = 'You are a helpful assistant in a live session. Be concise.'
-    try {
-      const { answer: reply } = await runAgent('live', text)
-      setChatMsgs(m => [...m, { id: (Date.now() + 1).toString(), user: 'AI', avatar: 'AI', time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), content: reply }])
-      updateRoomTokens(roomId, estimateTokens(text, ctx, reply))
-    } finally { setChatLoading(false) }
-  }, [chatInput, chatLoading, displayName, room, roomId, updateRoomTokens])
+    const text = chatInput.trim()
+    if (!text) return
+    jitsiApiRef.current?.executeCommand('sendChatMessage', text)
+    const me = displayName || 'You'
+    setChatMsgs(m => [
+      ...m,
+      { id: `me-${Date.now()}-${m.length}`, user: me, avatar: me.charAt(0).toUpperCase(), time: nowLabel(), content: text, self: true },
+    ])
+    setChatInput('')
+  }, [chatInput, displayName])
 
   const sendAssistant = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
@@ -340,8 +354,8 @@ export default function Workspace() {
     try {
       const context = activeBlock
         ? `You are helping with the "${activeBlock.title}" block of a live Sandbox session. ${activeBlock.hint}`
-        : 'You are an AI assistant in a live creative Sandbox session.'
-      const { answer: ans } = await runAgent('sandbox', q, { extraContext: context })
+        : 'You are the AI assistant in a live Google Ads webinar. Answer attendee questions like a senior PPC specialist.'
+      const { answer: ans } = await runAgent(activeBlock ? 'sandbox' : 'assistant', q, { extraContext: context })
       setAssistantMsgs(m => [...m, { id: (Date.now() + 1).toString(), role: 'assistant', content: ans }])
       updateRoomTokens(roomId, estimateTokens(q, context, ans))
     } finally { setAssistantLoading(false) }
@@ -352,9 +366,9 @@ export default function Workspace() {
     setApiLoading(true); setApiResponse(null)
     try {
       let prompt = 'Generate creative content'
-      try { const p = JSON.parse(apiBody); if (p.prompt) prompt = p.prompt } catch {}
-      const ctx = 'You are a creative AI. Generate vivid, descriptive content based on the prompt.'
-      const { answer: resp } = await runAgent('sandbox', prompt, { extraContext: ctx, skipRetrieval: true })
+      try { const p = JSON.parse(apiBody); if (p.prompt) prompt = p.prompt } catch { /* free-form body */ }
+      const ctx = 'You are a Google Ads specialist. Produce concise, practical, ready-to-use output.'
+      const { answer: resp } = await runAgent('assistant', prompt, { extraContext: ctx, skipRetrieval: true })
       setApiResponse(resp)
       updateRoomTokens(roomId, estimateTokens(prompt, ctx, resp))
     } finally { setApiLoading(false) }
@@ -364,11 +378,10 @@ export default function Workspace() {
     if (transcriptLoading) return
     setTranscriptLoading(true)
     try {
-      const prompt = `Generate a realistic 5-minute webinar transcript excerpt for room "${roomId}". Include speaker names (Host, Sophie, Alex), timestamps, and natural conversation.`
-      const ctx = 'You are a transcript generator. Output clean, realistic transcript text with timestamps in [MM:SS] format.'
+      const prompt = `Generate a realistic 5-minute Google Ads webinar transcript excerpt for room "${roomId}". Include a Host and a couple of attendees, timestamps in [MM:SS], and natural Q&A about campaigns and bidding.`
       const { answer: t } = await TOOLS.transcript.run(prompt)
       setTranscript(t)
-      updateRoomTokens(roomId, estimateTokens(prompt, ctx, t))
+      updateRoomTokens(roomId, estimateTokens(prompt, t))
     } finally { setTranscriptLoading(false) }
   }
 
@@ -378,9 +391,53 @@ export default function Workspace() {
     setTimeout(() => setCopied(false), 2000)
   }
 
+  function askInAssistant(text: string) {
+    setAssistantInput(text)
+    setRailTab('assistant')
+    setRailCollapsed(false)
+  }
+
   function toggleMic() { jitsiApiRef.current?.executeCommand('toggleAudio'); setMicMuted(m => !m) }
   function toggleCam() { jitsiApiRef.current?.executeCommand('toggleVideo'); setCamMuted(c => !c) }
   function hangUp()    { jitsiApiRef.current?.executeCommand('hangup'); navigate({ to: '/live' }) }
+
+  // ── Video stage (always mounted). Large in stage view; a corner PiP while the
+  //    Sandbox fills the stage (LLP-139 / LLP-141).
+  const stageEl = (
+    <div
+      className={
+        view === 'stage'
+          ? 'absolute inset-0'
+          : 'absolute bottom-4 right-4 w-52 h-32 sm:w-60 sm:h-36 rounded-xl overflow-hidden shadow-2xl ring-1 ring-black/20 z-30'
+      }
+    >
+      <div ref={jitsiContainerRef} className="absolute inset-0 bg-[#0f0f13]" />
+      {!jitsiLoaded && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-6 h-6 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+            <p className="text-[10px] text-white/50">Connecting…</p>
+          </div>
+        </div>
+      )}
+      <div className="absolute top-2.5 left-2.5 flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[9px] font-bold pointer-events-none">
+        <Radio size={8} /> LIVE
+      </div>
+      <div className="absolute bottom-0 left-0 right-0 flex items-center justify-center gap-2 p-2 bg-gradient-to-t from-black/60 to-transparent">
+        <button onClick={toggleMic} title={micMuted ? 'Unmute' : 'Mute'}
+          className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${micMuted ? 'bg-red-500' : 'bg-white/20 hover:bg-white/30'}`}>
+          {micMuted ? <MicOff size={13} className="text-white" /> : <Mic size={13} className="text-white" />}
+        </button>
+        <button onClick={toggleCam} title={camMuted ? 'Start video' : 'Stop video'}
+          className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${camMuted ? 'bg-red-500' : 'bg-white/20 hover:bg-white/30'}`}>
+          {camMuted ? <VideoOff size={13} className="text-white" /> : <Video size={13} className="text-white" />}
+        </button>
+        <button onClick={hangUp} title="Leave" className="w-8 h-8 rounded-full bg-red-600 hover:bg-red-500 flex items-center justify-center transition-colors">
+          <PhoneOff size={13} className="text-white" />
+        </button>
+      </div>
+    </div>
+  )
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
@@ -398,7 +455,7 @@ export default function Workspace() {
 
         <div className="flex items-center gap-2">
           <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-          <span className="text-xs text-[#6B7280] font-medium truncate max-w-[160px]">{roomId}</span>
+          <span className="text-xs text-[#6B7280] font-medium truncate max-w-[140px]">{roomId}</span>
           {hostEntry && (
             <span className="hidden sm:flex items-center gap-1 text-[10px] text-[#9CA3AF]">
               <Crown size={9} className="text-amber-500" /> {hostEntry.name}{hostEntry.isLocal ? ' (you)' : ''}
@@ -435,6 +492,18 @@ export default function Workspace() {
           </div>
         </div>
 
+        {/* Stage / Sandbox toggle (LLP-139) */}
+        <div className="hidden md:flex items-center gap-0.5 ml-1 p-0.5 rounded-lg bg-[#F7F7FA] border border-[#E8E8EF]">
+          <button onClick={() => setView('stage')} title="Speaker / share on the main stage"
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${view === 'stage' ? 'bg-white shadow-sm text-[#111827]' : 'text-[#9CA3AF] hover:text-[#374151]'}`}>
+            <Radio size={12} /> Stage
+          </button>
+          <button onClick={() => setView('sandbox')} title="Work on the main stage, speaker in the corner"
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${view === 'sandbox' ? 'bg-white shadow-sm text-[#111827]' : 'text-[#9CA3AF] hover:text-[#374151]'}`}>
+            <LayoutGrid size={12} /> Sandbox
+          </button>
+        </div>
+
         <div className="flex-1" />
 
         {room && room.tokenUsage >= room.tokenCeiling * 0.8 && (
@@ -465,279 +534,154 @@ export default function Workspace() {
       {/* ── Body ───────────────────────────────────────────────────────────────── */}
       <div className="flex flex-1 min-h-0">
 
-        {/* ── Left: Live ─────────────────────────────────────────────────────── */}
-        <div className={`flex flex-col bg-white border-r border-[#E8E8EF] shrink-0 transition-all duration-300 overflow-hidden ${liveCollapsed ? 'w-11' : 'w-72'}`}>
-          {liveCollapsed ? (
-            <button onClick={() => setLiveCollapsed(false)}
-              className="flex-1 flex flex-col items-center justify-center gap-2 text-[#9CA3AF] hover:text-[#374151] hover:bg-[#F7F7FA] transition-colors">
-              <Radio size={14} />
-              <ChevronRight size={10} />
-            </button>
-          ) : (
-            <>
-              {/* Live header */}
-              <div className="px-3 py-2.5 border-b border-[#E8E8EF] flex items-center gap-2 shrink-0">
-                <span className="relative flex h-1.5 w-1.5 shrink-0">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500" />
-                </span>
-                <span className="text-xs font-semibold text-[#111827] flex-1">Live</span>
-                <span className="flex items-center gap-1 text-[10px] text-[#9CA3AF]"><Users size={9} /> {participantCount}</span>
-                <button onClick={() => setLiveCollapsed(true)} className="p-1 rounded hover:bg-[#F7F7FA] text-[#9CA3AF] transition-colors">
-                  <ChevronLeft size={12} />
-                </button>
-              </div>
-
-              {/* Video */}
-              <div className="bg-[#0f0f13] relative shrink-0 overflow-hidden" style={{ height: 180 }}>
-                <div ref={jitsiContainerRef} className="absolute inset-0" />
-                {!jitsiLoaded && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="w-5 h-5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-                      <p className="text-[9px] text-white/40">Connecting…</p>
-                    </div>
-                  </div>
-                )}
-                <div className="absolute top-2 left-2 flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[9px] font-bold pointer-events-none">
-                  <Radio size={8} /> LIVE
-                </div>
-                <div className="absolute bottom-0 left-0 right-0 flex items-center justify-center gap-2 p-2 bg-gradient-to-t from-black/60 to-transparent">
-                  <button onClick={toggleMic} title={micMuted ? 'Unmute' : 'Mute'}
-                    className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${micMuted ? 'bg-red-500' : 'bg-white/20 hover:bg-white/30'}`}>
-                    {micMuted ? <MicOff size={12} className="text-white" /> : <Mic size={12} className="text-white" />}
-                  </button>
-                  <button onClick={toggleCam} title={camMuted ? 'Start video' : 'Stop video'}
-                    className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${camMuted ? 'bg-red-500' : 'bg-white/20 hover:bg-white/30'}`}>
-                    {camMuted ? <VideoOff size={12} className="text-white" /> : <Video size={12} className="text-white" />}
-                  </button>
-                  <button onClick={hangUp} title="Leave" className="w-7 h-7 rounded-full bg-red-600 hover:bg-red-500 flex items-center justify-center transition-colors">
-                    <PhoneOff size={12} className="text-white" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Graceful media-permission notice (T-70 / LLP-76) */}
-              {mediaNotice && !noticeDismissed && (
-                <div className="flex items-start gap-2 px-3 py-2 bg-amber-50 border-b border-amber-100 text-[11px] text-amber-800 shrink-0">
-                  <VideoOff size={12} className="mt-0.5 shrink-0" />
-                  <span className="flex-1 leading-snug">{mediaNotice}</span>
-                  <button onClick={() => setNoticeDismissed(true)} className="shrink-0 text-amber-500 hover:text-amber-700" title="Dismiss">
-                    <X size={12} />
-                  </button>
-                </div>
-              )}
-
-              {/* Live poll (T-68 / LLP-74) + Breakouts (T-74 / LLP-80) */}
-              <div className="px-3 py-2 border-b border-[#E8E8EF] shrink-0 space-y-2 empty:hidden [&:not(:has(>*))]:hidden">
-                <PollPanel roomId={roomId} canLaunch={canLaunchPolls} />
-                <BreakoutsPanel
-                  roomId={roomId}
-                  canLaunch={canLaunchPolls}
-                  participantNames={participants.map((p) => p.name)}
-                  myName={displayName || 'You'}
-                />
-              </div>
-
-              {/* Chat */}
-              <div className="flex flex-col flex-1 min-h-0">
-                <div className="px-3 py-2 border-b border-[#E8E8EF] flex items-center gap-2 shrink-0">
-                  <span className="text-xs font-semibold text-[#111827] flex-1">Chat</span>
-                  <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse" />
-                </div>
-                <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0">
-                  {chatMsgs.map(msg => (
-                    <div key={msg.id} className="flex items-start gap-2">
-                      {msg.avatar === 'AI' ? (
-                        <div className="w-5 h-5 rounded-full bg-indigo-100 flex items-center justify-center shrink-0">
-                          <Brain size={10} className="text-indigo-600" />
+        {/* ── Centre stage ────────────────────────────────────────────────────── */}
+        <div className="flex-1 relative min-w-0 overflow-hidden bg-[#0f0f13]">
+          {/* Sandbox surface — fills the stage in sandbox view */}
+          {view === 'sandbox' && (
+            <div className="absolute inset-0 bg-[#F7F7FA] overflow-y-auto">
+              {expandedBlock ? (
+                (() => {
+                  const block = BLOCKS.find(b => b.id === expandedBlock)!
+                  const Icon  = block.icon
+                  const c     = COLORS[block.color]
+                  return (
+                    <div className="flex flex-col min-h-full">
+                      <div className="px-6 py-4 bg-white border-b border-[#E8E8EF] flex items-center gap-3 shrink-0">
+                        <button onClick={() => setExpandedBlock(null)}
+                          className="p-1.5 rounded-lg hover:bg-[#F7F7FA] text-[#9CA3AF] hover:text-[#374151] transition-colors">
+                          <X size={14} />
+                        </button>
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${c.iconBg}`}>
+                          <Icon size={17} className={c.iconColor} />
                         </div>
-                      ) : (
-                        <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-[9px] font-bold text-white ${AVATAR_COLORS[msg.avatar] || 'bg-gray-400'}`}>
-                          {msg.avatar}
+                        <div className="flex-1 min-w-0">
+                          <h2 className="text-sm font-bold text-[#111827]">{block.title}</h2>
+                          <p className="text-xs text-[#9CA3AF]">{block.subtitle}</p>
                         </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-[11px] font-semibold text-[#374151]">{msg.user}</span>
-                          <span className="text-[9px] text-[#9CA3AF]">{msg.time}</span>
-                        </div>
-                        <p className="text-[11px] text-[#6B7280] leading-relaxed">{msg.content}</p>
+                        <button onClick={() => askInAssistant(block.hint)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-xs font-medium transition-colors">
+                          <Sparkles size={11} /> Ask AI
+                        </button>
+                      </div>
+                      <div className="flex-1 p-6 min-h-0">
+                        <textarea
+                          value={blockContent[expandedBlock] || ''}
+                          onChange={e => setBlockContent(prev => ({ ...prev, [expandedBlock]: e.target.value }))}
+                          placeholder={block.placeholder}
+                          className="w-full h-full min-h-64 p-5 rounded-2xl border border-[#E8E8EF] bg-white text-sm text-[#374151] leading-relaxed resize-none focus:outline-none focus:border-indigo-300 placeholder-[#D1D5DB] shadow-sm"
+                        />
+                      </div>
+                      <div className="h-16 bg-white border-t border-[#E8E8EF] flex items-center gap-2 px-6 overflow-x-auto shrink-0">
+                        <span className="text-[10px] text-[#9CA3AF] font-medium shrink-0 mr-1">Jump to:</span>
+                        {BLOCKS.filter(b => b.id !== expandedBlock).map(b => {
+                          const BIcon = b.icon
+                          const bc = COLORS[b.color]
+                          return (
+                            <button key={b.id} onClick={() => setExpandedBlock(b.id)}
+                              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border shrink-0 transition-all hover:shadow-sm ${bc.bg} ${bc.border}`}>
+                              <BIcon size={11} className={bc.iconColor} />
+                              <span className="text-[11px] font-medium text-[#374151]">{b.title}</span>
+                              {blockContent[b.id] && <span className={`w-1.5 h-1.5 rounded-full ${bc.dot} shrink-0`} />}
+                            </button>
+                          )
+                        })}
                       </div>
                     </div>
-                  ))}
-                  {chatLoading && (
-                    <div className="flex items-center gap-2">
-                      <div className="w-5 h-5 rounded-full bg-indigo-100 flex items-center justify-center shrink-0">
-                        <Brain size={10} className="text-indigo-600" />
-                      </div>
-                      <div className="flex gap-1">{[0, 150, 300].map(d => <span key={d} className="w-1 h-1 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: `${d}ms` }} />)}</div>
-                    </div>
-                  )}
-                  <div ref={chatEndRef} />
-                </div>
-                <form onSubmit={sendChat} className="px-3 py-2 border-t border-[#E8E8EF] flex items-center gap-2 shrink-0">
-                  <input value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder="Say something…"
-                    className="flex-1 px-2.5 py-1.5 rounded-lg bg-[#F7F7FA] border border-[#E8E8EF] text-[11px] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-indigo-300" />
-                  <button type="submit" disabled={!chatInput.trim() || chatLoading}
-                    className="p-1.5 rounded-lg text-[#9CA3AF] hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-40 transition-colors">
-                    <Send size={12} />
-                  </button>
-                </form>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* ── Centre: Sandbox ─────────────────────────────────────────────────── */}
-        <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
-          {expandedBlock ? (
-            // Expanded block view
-            (() => {
-              const block = BLOCKS.find(b => b.id === expandedBlock)!
-              const Icon  = block.icon
-              const c     = COLORS[block.color]
-              return (
-                <div className="flex flex-col h-full">
-                  {/* Block header */}
-                  <div className="px-6 py-4 bg-white border-b border-[#E8E8EF] flex items-center gap-3 shrink-0">
-                    <button onClick={() => setExpandedBlock(null)}
-                      className="p-1.5 rounded-lg hover:bg-[#F7F7FA] text-[#9CA3AF] hover:text-[#374151] transition-colors">
-                      <X size={14} />
-                    </button>
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${c.iconBg}`}>
-                      <Icon size={17} className={c.iconColor} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h2 className="text-sm font-bold text-[#111827]">{block.title}</h2>
-                      <p className="text-xs text-[#9CA3AF]">{block.subtitle}</p>
-                    </div>
-                    <button
-                      onClick={() => { setAssistantInput(block.hint); setAssistantCollapsed(false); setAssistantTab('chat') }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-xs font-medium transition-colors">
-                      <Sparkles size={11} /> Ask AI
-                    </button>
+                  )
+                })()
+              ) : (
+                <div className="max-w-2xl mx-auto px-8 py-10">
+                  <div className="mb-8">
+                    <p className="text-xs text-[#9CA3AF] font-medium mb-1">{roomId}</p>
+                    <h1 className="text-2xl font-bold text-[#111827]">Sandbox</h1>
+                    <p className="text-sm text-[#9CA3AF] mt-1">Select a block to start building</p>
                   </div>
-
-                  {/* Content */}
-                  <div className="flex-1 p-6 min-h-0 overflow-auto">
-                    <textarea
-                      value={blockContent[expandedBlock] || ''}
-                      onChange={e => setBlockContent(prev => ({ ...prev, [expandedBlock]: e.target.value }))}
-                      placeholder={block.placeholder}
-                      className="w-full h-full min-h-48 p-5 rounded-2xl border border-[#E8E8EF] bg-white text-sm text-[#374151] leading-relaxed resize-none focus:outline-none focus:border-indigo-300 placeholder-[#D1D5DB] shadow-sm"
-                    />
-                  </div>
-
-                  {/* Mini blocks strip */}
-                  <div className="h-16 bg-white border-t border-[#E8E8EF] flex items-center gap-2 px-6 overflow-x-auto shrink-0">
-                    <span className="text-[10px] text-[#9CA3AF] font-medium shrink-0 mr-1">Jump to:</span>
-                    {BLOCKS.filter(b => b.id !== expandedBlock).map(b => {
-                      const BIcon = b.icon
-                      const bc = COLORS[b.color]
+                  <div className="grid grid-cols-2 gap-4">
+                    {BLOCKS.map(block => {
+                      const Icon = block.icon
+                      const c = COLORS[block.color]
+                      const hasContent = !!blockContent[block.id]
                       return (
-                        <button key={b.id} onClick={() => setExpandedBlock(b.id)}
-                          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border shrink-0 transition-all hover:shadow-sm ${bc.bg} ${bc.border}`}>
-                          <BIcon size={11} className={bc.iconColor} />
-                          <span className="text-[11px] font-medium text-[#374151]">{b.title}</span>
-                          {blockContent[b.id] && <span className={`w-1.5 h-1.5 rounded-full ${bc.dot} shrink-0`} />}
+                        <button key={block.id} onClick={() => setExpandedBlock(block.id)}
+                          className={`group relative p-5 rounded-2xl border-2 text-left transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 ${c.bg} ${hasContent ? c.activeBorder : c.border}`}>
+                          <div className="flex items-start justify-between mb-4">
+                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 ${c.iconBg}`}>
+                              <Icon size={18} className={c.iconColor} />
+                            </div>
+                            {hasContent && <div className={`w-2 h-2 rounded-full ${c.dot} mt-1`} />}
+                          </div>
+                          <p className="text-sm font-bold text-[#111827] mb-1">{block.title}</p>
+                          <p className="text-xs text-[#9CA3AF]">{block.subtitle}</p>
+                          {hasContent && (
+                            <p className="text-[11px] text-[#6B7280] mt-3 leading-relaxed line-clamp-2">{blockContent[block.id]}</p>
+                          )}
                         </button>
                       )
                     })}
                   </div>
                 </div>
-              )
-            })()
-          ) : (
-            // Grid view
-            <div className="flex-1 overflow-y-auto">
-              <div className="max-w-2xl mx-auto px-8 py-10">
-                <div className="mb-8">
-                  <p className="text-xs text-[#9CA3AF] font-medium mb-1">{roomId}</p>
-                  <h1 className="text-2xl font-bold text-[#111827]">Sandbox</h1>
-                  <p className="text-sm text-[#9CA3AF] mt-1">Select a block to start building</p>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  {BLOCKS.map(block => {
-                    const Icon = block.icon
-                    const c = COLORS[block.color]
-                    const hasContent = !!blockContent[block.id]
-                    return (
-                      <button key={block.id} onClick={() => setExpandedBlock(block.id)}
-                        className={`group relative p-5 rounded-2xl border-2 text-left transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 ${c.bg} ${hasContent ? c.activeBorder : c.border}`}>
-                        <div className="flex items-start justify-between mb-4">
-                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 ${c.iconBg}`}>
-                            <Icon size={18} className={c.iconColor} />
-                          </div>
-                          {hasContent && <div className={`w-2 h-2 rounded-full ${c.dot} mt-1`} />}
-                        </div>
-                        <p className="text-sm font-bold text-[#111827] mb-1">{block.title}</p>
-                        <p className="text-xs text-[#9CA3AF]">{block.subtitle}</p>
-                        {hasContent && (
-                          <p className="text-[11px] text-[#6B7280] mt-3 leading-relaxed line-clamp-2">{blockContent[block.id]}</p>
-                        )}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
+              )}
             </div>
           )}
+
+          {/* Media-permission notice (stage view) */}
+          {view === 'stage' && mediaNotice && !noticeDismissed && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 flex items-start gap-2 px-3 py-2 max-w-md rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-800 shadow-lg">
+              <VideoOff size={12} className="mt-0.5 shrink-0" />
+              <span className="flex-1 leading-snug">{mediaNotice}</span>
+              <button onClick={() => setNoticeDismissed(true)} className="shrink-0 text-amber-500 hover:text-amber-700" title="Dismiss">
+                <X size={12} />
+              </button>
+            </div>
+          )}
+
+          {/* The always-mounted video stage */}
+          {stageEl}
         </div>
 
-        {/* ── Right: Assistant ─────────────────────────────────────────────────── */}
-        <div className={`flex flex-col bg-white border-l border-[#E8E8EF] shrink-0 transition-all duration-300 overflow-hidden ${assistantCollapsed ? 'w-11' : 'w-80'}`}>
-          {assistantCollapsed ? (
-            <button onClick={() => setAssistantCollapsed(false)}
+        {/* ── Right rail ───────────────────────────────────────────────────────── */}
+        <div className={`hidden md:flex flex-col bg-white border-l border-[#E8E8EF] shrink-0 transition-all duration-300 overflow-hidden ${railCollapsed ? 'w-11' : 'w-80'}`}>
+          {railCollapsed ? (
+            <button onClick={() => setRailCollapsed(false)}
               className="flex-1 flex flex-col items-center justify-center gap-2 text-[#9CA3AF] hover:text-[#374151] hover:bg-[#F7F7FA] transition-colors">
               <Brain size={14} />
               <ChevronLeft size={10} />
             </button>
           ) : (
             <>
-              {/* Assistant header */}
-              <div className="px-4 py-3 border-b border-[#E8E8EF] flex items-center gap-2 shrink-0">
-                <Brain size={15} className="text-indigo-600 shrink-0" />
-                <span className="text-sm font-semibold text-[#111827] flex-1">Assistant</span>
-                {activeBlock && (
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium shrink-0 ${COLORS[activeBlock.color].tag}`}>
-                    {activeBlock.title}
-                  </span>
-                )}
-                <button onClick={() => setAssistantCollapsed(true)} className="p-1 rounded hover:bg-[#F7F7FA] text-[#9CA3AF] transition-colors">
+              {/* Rail tabs */}
+              <div className="flex items-center border-b border-[#E8E8EF] px-2 shrink-0">
+                {([
+                  { id: 'assistant', label: 'Assistant', icon: Brain },
+                  { id: 'chat', label: 'Chat', icon: MessageSquare },
+                  { id: 'notes', label: 'Notes', icon: BookOpen },
+                  { id: 'sources', label: 'Sources', icon: ExternalLink },
+                ] as const).map(t => (
+                  <button key={t.id} onClick={() => setRailTab(t.id)}
+                    className={`flex items-center gap-1.5 px-2.5 py-2.5 text-xs font-medium transition-colors relative ${railTab === t.id ? 'text-indigo-600' : 'text-[#9CA3AF] hover:text-[#6B7280]'}`}>
+                    <t.icon size={12} /> <span className="hidden lg:inline">{t.label}</span>
+                    {railTab === t.id && <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-indigo-600 rounded-t-full" />}
+                  </button>
+                ))}
+                <div className="flex-1" />
+                <button onClick={() => setRailCollapsed(true)} className="p-1 rounded hover:bg-[#F7F7FA] text-[#9CA3AF] transition-colors">
                   <ChevronRight size={12} />
                 </button>
               </div>
 
-              {/* Tabs */}
-              <div className="flex border-b border-[#E8E8EF] px-4 shrink-0">
-                {(['chat', 'notes', 'sources'] as const).map(tab => (
-                  <button key={tab} onClick={() => setAssistantTab(tab)}
-                    className={`px-3 py-2 text-xs font-medium transition-colors relative ${assistantTab === tab ? 'text-indigo-600' : 'text-[#9CA3AF] hover:text-[#6B7280]'}`}>
-                    {tab === 'chat' ? 'Chat' : tab === 'notes' ? 'Notes' : 'Sources'}
-                    {assistantTab === tab && <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-indigo-600 rounded-t-full" />}
-                  </button>
-                ))}
-              </div>
-
-              {/* Chat tab */}
-              {assistantTab === 'chat' && (
+              {/* Assistant (AI) */}
+              {railTab === 'assistant' && (
                 <>
                   <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
-                    {expandedBlock && assistantMsgs.length === 0 && activeBlock && (
-                      <div className={`p-3 rounded-xl border ${COLORS[activeBlock.color].border} ${COLORS[activeBlock.color].bg}`}>
-                        <p className={`text-[11px] font-semibold mb-1 ${COLORS[activeBlock.color].iconColor}`}>{activeBlock.title}</p>
-                        <p className="text-xs text-[#6B7280] leading-relaxed mb-2">{activeBlock.hint}</p>
-                        <button onClick={() => setAssistantInput(activeBlock.hint)}
-                          className={`text-[11px] font-medium hover:underline ${COLORS[activeBlock.color].iconColor}`}>
-                          Ask this →
-                        </button>
-                      </div>
+                    {activeBlock && (
+                      <span className={`inline-block text-[10px] px-2 py-0.5 rounded-full border font-medium ${COLORS[activeBlock.color].tag}`}>
+                        {activeBlock.title}
+                      </span>
                     )}
-                    {!expandedBlock && assistantMsgs.length === 0 && (
+                    {assistantMsgs.length === 0 && (
                       <div className="text-center py-8">
                         <Brain size={28} className="text-[#E8E8EF] mx-auto mb-3" />
-                        <p className="text-xs text-[#9CA3AF] leading-relaxed">Select a Sandbox block to get contextual help, or ask me anything.</p>
+                        <p className="text-xs text-[#9CA3AF] leading-relaxed">Ask the AI anything about your Google Ads campaigns — the auction, Quality Score, bidding, structure, or measurement.</p>
                       </div>
                     )}
                     {assistantMsgs.map(msg => (
@@ -747,7 +691,7 @@ export default function Workspace() {
                             <Brain size={11} className="text-indigo-600" />
                           </div>
                         )}
-                        <div className={`max-w-[85%] px-3 py-2 rounded-xl text-xs leading-relaxed ${
+                        <div className={`max-w-[85%] px-3 py-2 rounded-xl text-xs leading-relaxed whitespace-pre-wrap ${
                           msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-[#F7F7FA] border border-[#E8E8EF] text-[#374151]'
                         }`}>
                           {msg.content}
@@ -764,7 +708,7 @@ export default function Workspace() {
                   <form onSubmit={sendAssistant} className="p-3 border-t border-[#E8E8EF] shrink-0">
                     <div className="flex gap-2">
                       <input value={assistantInput} onChange={e => setAssistantInput(e.target.value)}
-                        placeholder={activeBlock ? `Ask about ${activeBlock.title.toLowerCase()}…` : 'Ask anything…'}
+                        placeholder={activeBlock ? `Ask about ${activeBlock.title.toLowerCase()}…` : 'Ask the AI anything…'}
                         className="flex-1 px-3 py-2 rounded-lg bg-[#F7F7FA] border border-[#E8E8EF] text-xs text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-indigo-400" />
                       <button type="submit" disabled={!assistantInput.trim() || assistantLoading}
                         className="p-2 rounded-lg bg-indigo-50 hover:bg-indigo-100 disabled:opacity-40 text-indigo-600 transition-colors">
@@ -775,8 +719,55 @@ export default function Workspace() {
                 </>
               )}
 
-              {/* Notes tab */}
-              {assistantTab === 'notes' && (
+              {/* Chat (real people) */}
+              {railTab === 'chat' && (
+                <>
+                  {/* Session tools: polls + breakouts */}
+                  <div className="px-3 py-2 border-b border-[#E8E8EF] shrink-0 space-y-2 empty:hidden [&:not(:has(>*))]:hidden">
+                    <PollPanel roomId={roomId} canLaunch={canLaunchPolls} />
+                    <BreakoutsPanel
+                      roomId={roomId}
+                      canLaunch={canLaunchPolls}
+                      participantNames={participants.map((p) => p.name)}
+                      myName={displayName || 'You'}
+                    />
+                  </div>
+                  <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0">
+                    {chatMsgs.length === 0 && (
+                      <div className="text-center py-10 text-[11px] text-[#9CA3AF]">
+                        <MessageSquare size={22} className="mx-auto mb-2 opacity-40" />
+                        No messages yet. Say hello to the room.
+                      </div>
+                    )}
+                    {chatMsgs.map(msg => (
+                      <div key={msg.id} className="flex items-start gap-2">
+                        <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-[9px] font-bold text-white ${avatarColor(msg.user)}`}>
+                          {msg.avatar}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-baseline gap-1">
+                            <span className="text-[11px] font-semibold text-[#374151]">{msg.user}{msg.self ? ' (you)' : ''}</span>
+                            <span className="text-[9px] text-[#9CA3AF]">{msg.time}</span>
+                          </div>
+                          <p className="text-[11px] text-[#6B7280] leading-relaxed break-words">{msg.content}</p>
+                        </div>
+                      </div>
+                    ))}
+                    <div ref={chatEndRef} />
+                  </div>
+                  <form onSubmit={sendChat} className="px-3 py-2 border-t border-[#E8E8EF] flex items-center gap-2 shrink-0">
+                    <input value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder="Message the room…"
+                      className="flex-1 px-2.5 py-1.5 rounded-lg bg-[#F7F7FA] border border-[#E8E8EF] text-[11px] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-indigo-300" />
+                    <button type="submit" disabled={!chatInput.trim()}
+                      className="p-1.5 rounded-lg text-[#9CA3AF] hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-40 transition-colors">
+                      <Send size={12} />
+                    </button>
+                  </form>
+                </>
+              )}
+
+              {/* Notes */}
+              {railTab === 'notes' && (
                 <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
                   <div>
                     <p className="text-xs font-semibold text-[#374151] mb-2">Key takeaways</p>
@@ -808,8 +799,8 @@ export default function Workspace() {
                 </div>
               )}
 
-              {/* Sources tab */}
-              {assistantTab === 'sources' && (
+              {/* Sources */}
+              {railTab === 'sources' && (
                 <div className="flex-1 overflow-y-auto p-4 space-y-2 min-h-0">
                   <p className="text-[10px] text-[#9CA3AF] uppercase tracking-wider mb-3">Referenced this session</p>
                   {SOURCES.map((s, i) => (
@@ -844,7 +835,7 @@ export default function Workspace() {
             </button>
           </div>
           <div className="flex border-b border-[#E8E8EF] px-6 shrink-0">
-            {(['api', 'prompts', 'models', 'tools'] as const).map(tab => (
+            {(['api', 'prompts', 'tools'] as const).map(tab => (
               <button key={tab} onClick={() => setBuildTab(tab)}
                 className={`px-4 py-2.5 text-sm font-medium transition-colors relative capitalize ${buildTab === tab ? 'text-[#111827]' : 'text-[#9CA3AF] hover:text-[#6B7280]'}`}>
                 {tab}
@@ -877,11 +868,7 @@ export default function Workspace() {
                     ) : apiResponse ? (
                       <div className="p-4 rounded-xl bg-[#F7F7FA] border border-[#E8E8EF] text-sm text-[#374151] leading-relaxed whitespace-pre-wrap">{apiResponse}</div>
                     ) : (
-                      <div className="flex gap-3">
-                        {['radial-gradient(ellipse at 40% 40%,#1e3a5f,#0a0a0a)', 'radial-gradient(ellipse at 60% 40%,#2d1b69,#0a0a0a)', 'radial-gradient(ellipse at 50% 60%,#1a2e1a,#0a0a0a)'].map((g, i) => (
-                          <div key={i} className="flex-1 h-20 rounded-xl" style={{ background: g }} />
-                        ))}
-                      </div>
+                      <div className="p-4 rounded-xl bg-[#F7F7FA] border border-dashed border-[#E8E8EF] text-sm text-[#9CA3AF]">Send a request to see the generated output here.</div>
                     )}
                   </div>
                 </>
@@ -890,26 +877,10 @@ export default function Workspace() {
                 <div className="space-y-3">
                   <p className="text-xs font-semibold text-[#9CA3AF] uppercase tracking-wider">Prompt library</p>
                   {PROMPT_LIBRARY.map((p, i) => (
-                    <button key={i} onClick={() => { setApiBody(`{\n  "prompt": "${p.prompt}",\n  "style": "cinematic",\n  "ar": "16:9"\n}`); setBuildTab('api') }}
+                    <button key={i} onClick={() => { setApiBody(`{\n  "prompt": "${p.prompt}",\n  "style": "concise",\n  "count": 3\n}`); setBuildTab('api') }}
                       className="w-full text-left p-4 rounded-xl border border-[#E8E8EF] hover:border-indigo-200 hover:bg-indigo-50/40 transition-colors group">
                       <p className="text-sm font-semibold text-[#374151] group-hover:text-indigo-700 mb-1">{p.label}</p>
                       <p className="text-xs text-[#9CA3AF] leading-relaxed">{p.prompt}</p>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {buildTab === 'models' && (
-                <div className="space-y-3">
-                  <p className="text-xs font-semibold text-[#9CA3AF] uppercase tracking-wider">Select model</p>
-                  {BUILD_MODELS.map(m => (
-                    <button key={m.id} onClick={() => setActiveModel(m.id)}
-                      className={`w-full text-left p-4 rounded-xl border transition-all flex items-center gap-3 ${activeModel === m.id ? 'border-indigo-300 bg-indigo-50' : 'border-[#E8E8EF] hover:border-indigo-200 hover:bg-[#F7F7FA]'}`}>
-                      <Cpu size={16} className={activeModel === m.id ? 'text-indigo-600' : 'text-[#9CA3AF]'} />
-                      <div className="flex-1">
-                        <p className="text-sm font-semibold text-[#374151]">{m.label}</p>
-                      </div>
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${activeModel === m.id ? 'bg-indigo-100 text-indigo-700' : 'bg-[#F7F7FA] text-[#9CA3AF]'}`}>{m.badge}</span>
-                      {activeModel === m.id && <CheckIcon size={14} className="text-indigo-600 shrink-0" />}
                     </button>
                   ))}
                 </div>

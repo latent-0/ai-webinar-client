@@ -24,7 +24,7 @@ export default function LearnSection() {
   )
 }
 
-const TOPICS = ['AI & prompting', 'Marketing', 'Data analysis', 'Design', 'Product', 'Leadership']
+const TOPICS = ['Search campaigns', 'Performance Max', 'Quality Score', 'Smart Bidding', 'Keywords & match types', 'Conversion tracking']
 
 function KnowledgeHub() {
   const library = usePersistStore((s) => s.library)

@@ -24,7 +24,7 @@ const START_OPTIONS = [
   {
     icon: Search,
     label: 'Research a topic',
-    desc: 'Deep-dive into AI, auditing, law, dentistry, marketing and more.',
+    desc: 'Deep-dive into Google Ads — the auction, Quality Score, bidding and more.',
     href: '/learn',
     color: 'emerald',
     iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600',
@@ -67,7 +67,7 @@ const MODES = [
   },
   {
     tag: '02', title: 'Learn', subtitle: 'Build deep knowledge', icon: BookOpen, href: '/learn',
-    accent: 'emerald', desc: 'Domain-specific AI with curated knowledge bases across six expert fields.',
+    accent: 'emerald', desc: 'Expert Google Ads AI with a curated, practitioner-level knowledge base.',
     dot: 'bg-emerald-500',
   },
   {
