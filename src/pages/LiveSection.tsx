@@ -1,13 +1,15 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
-  Radio, Plus, Users, ArrowRight, Copy, Check, Calendar, Megaphone, Hand, Activity, ShieldCheck,
+  Radio, Plus, Users, ArrowRight, Copy, Check, Calendar, ShieldCheck,
 } from 'lucide-react'
 import { useAppStore } from '../store'
 import { usePersistStore } from '../store/persist'
 import { generateRoomId, formatDate } from '../lib/utils'
 import SectionShell from '../components/SectionShell'
 import { sectionById } from '../lib/ia'
+import { getPresence } from '../lib/presenceClient'
+import type { Presence } from '../lib/monitor'
 
 /**
  * Live section (LLP-115) — interactive experiences across Upcoming / Live Now /
@@ -140,32 +142,27 @@ function RoomCard({ id }: { id: string }) {
 
 function EventList({ filter }: { filter: 'upcoming' | 'past' }) {
   const rooms = useAppStore((s) => s.rooms)
-  const list = filter === 'past' ? rooms.filter((r) => r.state === 'ended') : []
-  const upcoming = [
-    { id: 'u1', name: 'Advanced Prompting Workshop', when: 'Tomorrow, 3:00 PM' },
-    { id: 'u2', name: 'Analytics Deep-Dive', when: 'Fri, 11:00 AM' },
-  ]
+
   if (filter === 'upcoming') {
+    // No scheduling backend yet — show an honest empty state rather than
+    // fabricated "Tomorrow 3pm" events with dead buttons.
     return (
-      <div className="space-y-2">
-        {upcoming.map((e) => (
-          <div key={e.id} className="flex items-center gap-3 p-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
-            <Calendar size={16} className="text-indigo-500" />
-            <div className="flex-1"><p className="text-sm font-medium">{e.name}</p><p className="text-xs text-[var(--muted)]">{e.when}</p></div>
-            <button className="text-xs px-3 py-1.5 rounded-lg bg-[var(--surface-3)] font-medium">Remind me</button>
-          </div>
-        ))}
+      <div className="text-center py-16">
+        <Calendar size={22} className="mx-auto mb-2 text-[var(--muted)] opacity-50" />
+        <p className="text-sm text-[var(--muted)]">No upcoming sessions scheduled.</p>
+        <p className="text-xs text-[var(--muted)] mt-1">Start a session from “Live now” to go live instantly.</p>
       </div>
     )
   }
-  if (list.length === 0) return <div className="text-center py-16 text-sm text-[var(--muted)]">No past events yet.</div>
+
+  const list = rooms.filter((r) => r.state === 'ended')
+  if (list.length === 0) return <div className="text-center py-16 text-sm text-[var(--muted)]">No past sessions yet.</div>
   return (
     <div className="space-y-2">
       {list.map((r) => (
         <div key={r.id} className="flex items-center gap-3 p-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
           <Radio size={16} className="text-[var(--muted)]" />
-          <div className="flex-1"><p className="text-sm font-medium">{r.name}</p><p className="text-xs text-[var(--muted)]">{formatDate(r.createdAt)} · {r.participants} attended</p></div>
-          <button className="text-xs px-3 py-1.5 rounded-lg bg-[var(--surface-3)] font-medium">Recap</button>
+          <div className="flex-1"><p className="text-sm font-medium">{r.name}</p><p className="text-xs text-[var(--muted)]">{formatDate(r.createdAt)}{r.host ? ` · ${r.host}` : ''}</p></div>
         </div>
       ))}
     </div>
@@ -188,65 +185,52 @@ function CalendarView() {
   )
 }
 
-/** Facilitator Console (LLP-123): monitor participants, engagement, broadcast, consent-gated assist. */
+/** Facilitator Console (LLP-123): live participant monitor across active
+ *  sessions, driven by real room-presence heartbeats (LLP-82) — no fabricated
+ *  attendees or engagement feed. */
 function FacilitatorConsole() {
-  const [broadcast, setBroadcast] = useState('')
-  const [sent, setSent] = useState<string | null>(null)
-  const [assistFor, setAssistFor] = useState<string | null>(null)
-  const participants = [
-    { name: 'Sophie', status: 'engaged' as const },
-    { name: 'Alex', status: 'stuck' as const },
-    { name: 'Priya', status: 'inactive' as const },
-  ]
+  const rooms = useAppStore((s) => s.rooms)
+  const activeIds = rooms.filter((r) => r.state === 'active').map((r) => r.id)
+  const key = activeIds.join(',')
+  const [presence, setPresence] = useState<Record<string, Presence[]>>({})
+
+  useEffect(() => {
+    if (!activeIds.length) { setPresence({}); return }
+    let stop = false
+    const load = () => { void getPresence(activeIds).then((p) => { if (!stop) setPresence(p) }) }
+    load()
+    const t = setInterval(load, 5000)
+    return () => { stop = true; clearInterval(t) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key])
+
+  const roomName = (id: string) => rooms.find((r) => r.id === id)?.name ?? id
+  const entries = Object.entries(presence)
+    .flatMap(([roomId, list]) => list.map((p) => ({ roomId, ...p })))
+    .sort((a, b) => b.lastSeen - a.lastSeen)
+  const liveCount = entries.length
+
   return (
     <div className="p-5 rounded-2xl border border-indigo-200 dark:border-indigo-900 bg-indigo-50/50 dark:bg-indigo-950/30">
-      <div className="flex items-center gap-2 mb-4"><ShieldCheck size={16} className="text-indigo-600 dark:text-indigo-400" /><h3 className="text-sm font-semibold">Facilitator Console</h3></div>
-      <div className="grid md:grid-cols-3 gap-4">
-        {/* Participants */}
-        <div>
-          <p className="text-xs font-semibold text-[var(--muted)] mb-2 flex items-center gap-1"><Users size={12} /> Participants</p>
-          <div className="space-y-1.5">
-            {participants.map((p) => (
-              <div key={p.name} className="flex items-center gap-2 text-sm">
-                <span className={`w-1.5 h-1.5 rounded-full ${p.status === 'engaged' ? 'bg-emerald-500' : p.status === 'stuck' ? 'bg-amber-500' : 'bg-[var(--muted)]'}`} />
-                <span className="flex-1">{p.name}</span>
-                {p.status !== 'engaged' && <button onClick={() => setAssistFor(p.name)} className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline">Assist</button>}
-              </div>
-            ))}
-          </div>
-        </div>
-        {/* Engagement */}
-        <div>
-          <p className="text-xs font-semibold text-[var(--muted)] mb-2 flex items-center gap-1"><Activity size={12} /> Engagement</p>
-          <div className="space-y-2 text-xs text-[var(--muted)]">
-            <div>Sophie asked a question</div>
-            <div>3 reactions in last minute</div>
-            <div>Poll: 8/12 responded</div>
-          </div>
-        </div>
-        {/* Broadcast */}
-        <div>
-          <p className="text-xs font-semibold text-[var(--muted)] mb-2 flex items-center gap-1"><Megaphone size={12} /> Broadcast</p>
-          <form onSubmit={(e) => { e.preventDefault(); if (broadcast.trim()) { setSent(broadcast.trim()); setBroadcast('') } }} className="space-y-2">
-            <input value={broadcast} onChange={(e) => setBroadcast(e.target.value)} placeholder="Message all…" className="w-full px-2.5 py-1.5 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-            <button type="submit" className="w-full py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold">Send to all</button>
-          </form>
-          {sent && <p className="text-[11px] text-emerald-600 mt-1.5">Sent: “{sent}”</p>}
-        </div>
+      <div className="flex items-center gap-2 mb-4">
+        <ShieldCheck size={16} className="text-indigo-600 dark:text-indigo-400" />
+        <h3 className="text-sm font-semibold flex-1">Facilitator Console</h3>
+        <span className="flex items-center gap-1 text-[11px] text-[var(--muted)]"><Users size={12} /> {liveCount} live</span>
       </div>
-
-      {/* Consent-gated assist */}
-      {assistFor && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center px-4" onClick={() => setAssistFor(null)}>
-          <div className="absolute inset-0 bg-black/40" />
-          <div className="relative w-full max-w-sm p-5 rounded-2xl bg-[var(--surface)] border border-[var(--border)] shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-2 mb-2"><Hand size={16} className="text-indigo-500" /><h4 className="text-sm font-semibold">Request to assist {assistFor}</h4></div>
-            <p className="text-xs text-[var(--muted)] mb-4">{assistFor} must consent before you can view or co-edit their screen. A request will be sent and you'll wait for approval.</p>
-            <div className="flex gap-2">
-              <button onClick={() => setAssistFor(null)} className="flex-1 py-2 rounded-lg border border-[var(--border)] text-sm font-medium">Cancel</button>
-              <button onClick={() => setAssistFor(null)} className="flex-1 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">Send request</button>
+      <p className="text-xs font-semibold text-[var(--muted)] mb-2 flex items-center gap-1"><Users size={12} /> Live participants</p>
+      {activeIds.length === 0 ? (
+        <p className="text-xs text-[var(--muted)]">No active sessions right now.</p>
+      ) : entries.length === 0 ? (
+        <p className="text-xs text-[var(--muted)]">No participants detected yet. Live presence appears here once attendees join a session.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {entries.map((p) => (
+            <div key={`${p.roomId}:${p.identity}`} className="flex items-center gap-2 text-sm">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              <span className="flex-1 truncate">{p.identity}</span>
+              <span className="text-[11px] text-[var(--muted)] truncate max-w-[45%]">{roomName(p.roomId)}</span>
             </div>
-          </div>
+          ))}
         </div>
       )}
     </div>

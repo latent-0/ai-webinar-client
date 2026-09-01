@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { BookOpen, Send, Sparkles, Search, GraduationCap, Award, FileText, Loader2 } from 'lucide-react'
 import SectionShell from '../components/SectionShell'
 import { sectionById } from '../lib/ia'
@@ -61,9 +62,19 @@ function MyLearning() {
   const library = usePersistStore((s) => s.library)
   const settings = usePersistStore((s) => s.settings)
   const addNote = usePersistStore((s) => s.addNote)
+  const logActivity = usePersistStore((s) => s.logActivity)
+  const navigate = useNavigate()
   const [topic, setTopic] = useState('')
   const [path, setPath] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+
+  // Reopen an item where it lives (its origin surface) — a real navigation,
+  // not a dead button.
+  const resume = (item: (typeof library)[number]) => {
+    logActivity('learn', `Resumed “${item.title}”`)
+    const dest = ['live', 'learn', 'play'].includes(item.origin) ? `/${item.origin}` : '/library'
+    navigate({ to: dest })
+  }
 
   async function generate() {
     if (!topic.trim() || loading) return
@@ -78,12 +89,13 @@ function MyLearning() {
     <div className="space-y-6">
       <div>
         <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><GraduationCap size={15} /> Continue learning</h3>
+        {library.length === 0 && <p className="text-sm text-[var(--muted)]">Nothing yet — generate a learning path or save content to pick up where you left off.</p>}
         <div className="space-y-2">
           {library.slice(0, 4).map((i) => (
             <div key={i.id} className="flex items-center gap-3 p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)]">
               <div className="w-8 h-8 rounded-lg bg-[var(--surface-3)] flex items-center justify-center text-xs uppercase text-[var(--muted)]">{i.kind[0]}</div>
               <p className="text-sm font-medium flex-1 truncate">{i.title}</p>
-              <button className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium">Resume</button>
+              <button onClick={() => resume(i)} className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium">Resume</button>
             </div>
           ))}
         </div>

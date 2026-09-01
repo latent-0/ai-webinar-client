@@ -93,30 +93,13 @@ export interface Profile {
 
 // ── Defaults & seed ──────────────────────────────────────────────────────────
 
-const now = 1_755_600_000_000 // fixed seed timestamp (avoids Date.now at import)
+// No fabricated user history. A first-time user starts empty and every
+// surface (Home, Library, Projects, Analytics, AI memory) shows honest empty
+// states until they actually do something. Real data flows in via addRoom,
+// addLibraryItem, addProject, addAiMemory and logActivity.
+const SEED_LIBRARY: LibraryItem[] = []
 
-const SEED_LIBRARY: LibraryItem[] = [
-  { id: 'seed-1', title: 'AI in 2025: What You Need to Know', kind: 'video', origin: 'live', topic: 'AI', summary: 'Recording of the flagship live session.', bookmarked: true, createdAt: now - 86_400_000 },
-  { id: 'seed-2', title: 'Google Ads match types', kind: 'article', origin: 'learn', topic: 'Marketing', summary: 'Broad, phrase and exact match explained.', bookmarked: false, createdAt: now - 172_800_000 },
-  { id: 'seed-3', title: 'Build an ad group (practice)', kind: 'scenario', origin: 'play', topic: 'Marketing', summary: 'Hands-on scenario from the Sandbox.', bookmarked: false, createdAt: now - 259_200_000 },
-]
-
-const SEED_PROJECTS: Project[] = [
-  {
-    id: 'proj-seed-1',
-    name: 'Q4 Google Ads campaign',
-    description: 'Plan and build a search campaign from the workshop.',
-    starred: true,
-    tasks: [
-      { id: 't1', title: 'Draft match-type strategy', done: true },
-      { id: 't2', title: 'Build ad group in Play', done: false },
-      { id: 't3', title: 'Review with facilitator', done: false },
-    ],
-    noteIds: [],
-    createdAt: now - 200_000_000,
-    updatedAt: now - 100_000,
-  },
-]
+const SEED_PROJECTS: Project[] = []
 
 const DEFAULT_SETTINGS: Settings = {
   language: 'en-US',
@@ -191,15 +174,9 @@ export const usePersistStore = create<PersistState>()(
       library: SEED_LIBRARY,
       notes: [],
       projects: SEED_PROJECTS,
-      aiMemory: {
-        facts: ['Attended the "AI in 2025" live session.'],
-        preferences: ['Prefers concise, practical answers.'],
-        corrections: [],
-      },
+      aiMemory: { facts: [], preferences: [], corrections: [] },
       savedSearches: [],
-      activity: [
-        { id: 'act-seed', surface: 'live', label: 'Joined "AI in 2025"', at: now - 86_400_000 },
-      ],
+      activity: [],
       _seq: 100,
 
       setRole: (role) => { set({ role }); get().logActivity('settings', `Switched role to ${role}`) },
@@ -275,7 +252,9 @@ export const usePersistStore = create<PersistState>()(
         })),
     }),
     {
-      name: 'sandbox-persist-v1',
+      // Bumped from v1 → v2 to drop previously-seeded demo data from returning
+      // testers' localStorage, so everyone starts from an honest empty state.
+      name: 'sandbox-persist-v2',
       partialize: (s) => ({
         role: s.role, profile: s.profile, settings: s.settings, library: s.library,
         notes: s.notes, projects: s.projects, aiMemory: s.aiMemory,

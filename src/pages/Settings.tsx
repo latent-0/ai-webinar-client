@@ -95,10 +95,13 @@ function Preferences() {
 }
 
 function Integrations() {
+  // No integration is wired to a real OAuth/connect flow yet, so none is shown
+  // as "Connected" and the action is honestly labelled "Coming soon" rather
+  // than a button that looks live but does nothing.
   const items = [
-    { name: 'Google Drive', desc: 'Sync sources and files', connected: false },
-    { name: 'Calendar', desc: 'See sessions & deadlines', connected: false },
-    { name: 'API & Webhooks', desc: 'Automate with your stack', connected: true },
+    { name: 'Google Drive', desc: 'Sync sources and files' },
+    { name: 'Calendar', desc: 'See sessions & deadlines' },
+    { name: 'API & Webhooks', desc: 'Automate with your stack' },
   ]
   return (
     <div className="max-w-xl space-y-2">
@@ -106,9 +109,7 @@ function Integrations() {
         <div key={i.name} className="flex items-center gap-3 p-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
           <div className="w-9 h-9 rounded-xl bg-[var(--surface-3)] flex items-center justify-center"><Link2 size={16} className="text-[var(--muted)]" /></div>
           <div className="flex-1"><p className="text-sm font-medium">{i.name}</p><p className="text-xs text-[var(--muted)]">{i.desc}</p></div>
-          <button className={`text-xs px-3 py-1.5 rounded-lg font-medium ${i.connected ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600' : 'bg-indigo-600 text-white hover:bg-indigo-500'}`}>
-            {i.connected ? 'Connected' : 'Connect'}
-          </button>
+          <span className="text-xs px-3 py-1.5 rounded-lg font-medium bg-[var(--surface-3)] text-[var(--muted)]">Coming soon</span>
         </div>
       ))}
     </div>
@@ -167,10 +168,11 @@ function Admin() {
   const items = ['Organization', 'Users & Roles', 'Content Audit', 'System Settings', 'Billing']
   return (
     <div className="max-w-xl space-y-2">
+      <p className="text-xs text-[var(--muted)] mb-1">Admin tools are on the roadmap and not yet available in this build.</p>
       {items.map((i) => (
         <div key={i} className="flex items-center justify-between p-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
           <p className="text-sm font-medium">{i}</p>
-          <span className="text-xs text-[var(--muted)]">Manage</span>
+          <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--surface-3)] text-[var(--muted)]">Coming soon</span>
         </div>
       ))}
     </div>

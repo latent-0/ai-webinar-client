@@ -86,7 +86,7 @@ function avatarColor(name: string): string {
   return AVATAR_COLORS[h % AVATAR_COLORS.length]
 }
 
-const SESSION_NOTES = [
+const SESSION_TIPS = [
   'Clear goals unlock better AI outputs.',
   'More context in Inputs means richer Insights.',
   'Iterate with small changes, not big jumps.',
@@ -96,10 +96,10 @@ const SESSION_NOTES = [
 ]
 
 const SOURCES = [
-  { title: 'Google Ads Help — Auction & Ad Rank', domain: 'support.google.com' },
-  { title: 'Smart Bidding best practices', domain: 'support.google.com' },
-  { title: 'Quality Score explained', domain: 'support.google.com' },
-  { title: 'Search Terms & negative keywords', domain: 'support.google.com' },
+  { title: 'Google Ads Help — Auction & Ad Rank', domain: 'support.google.com', url: 'https://support.google.com/google-ads/answer/1704431' },
+  { title: 'Smart Bidding best practices', domain: 'support.google.com', url: 'https://support.google.com/google-ads/answer/7065882' },
+  { title: 'Quality Score explained', domain: 'support.google.com', url: 'https://support.google.com/google-ads/answer/6167118' },
+  { title: 'Search terms & negative keywords', domain: 'support.google.com', url: 'https://support.google.com/google-ads/answer/2453981' },
 ]
 
 const PROMPT_LIBRARY = [
@@ -107,13 +107,6 @@ const PROMPT_LIBRARY = [
   { label: 'Negative keyword list', prompt: 'Suggest a starter negative keyword list for a lead-gen Search campaign for an accounting firm.' },
   { label: 'Campaign structure',    prompt: 'Propose a Google Ads account structure (campaigns, ad groups, keywords) for an ecommerce store with 3 product lines.' },
   { label: 'Bidding strategy',      prompt: 'Recommend a bidding strategy for a new Search campaign with no conversion history, and the migration path to tROAS.' },
-]
-
-const BUILD_TOOLS = [
-  { id: 'web_search', label: 'Web Search',        desc: 'Search the web for current info',      enabled: true  },
-  { id: 'code_exec',  label: 'Code Execution',    desc: 'Run code and return output',            enabled: false },
-  { id: 'image_gen',  label: 'Image Generation',  desc: 'Generate images from prompts',          enabled: true  },
-  { id: 'doc_parse',  label: 'Document Parser',   desc: 'Extract info from docs and PDFs',       enabled: false },
 ]
 
 function estimateTokens(...texts: string[]) {
@@ -158,11 +151,10 @@ export default function Workspace() {
   const [transcriptLoading, setTranscriptLoading] = useState(false)
 
   // ── Build mode
-  const [buildTab, setBuildTab]         = useState<'api' | 'prompts' | 'tools'>('api')
+  const [buildTab, setBuildTab]         = useState<'api' | 'prompts'>('api')
   const [apiBody, setApiBody]           = useState('{\n  "prompt": "Write a responsive search ad for running shoes",\n  "style": "concise",\n  "count": 3\n}')
   const [apiLoading, setApiLoading]     = useState(false)
   const [apiResponse, setApiResponse]   = useState<string | null>(null)
-  const [enabledTools, setEnabledTools] = useState(['web_search', 'image_gen'])
 
   // ── Misc
   const [copied, setCopied]                   = useState(false)
@@ -770,9 +762,9 @@ export default function Workspace() {
               {railTab === 'notes' && (
                 <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
                   <div>
-                    <p className="text-xs font-semibold text-[#374151] mb-2">Key takeaways</p>
+                    <p className="text-xs font-semibold text-[#374151] mb-2">Tips</p>
                     <ul className="space-y-1.5">
-                      {SESSION_NOTES.map(note => (
+                      {SESSION_TIPS.map(note => (
                         <li key={note} className="flex items-start gap-2 text-xs text-[#6B7280]">
                           <span className="w-1 h-1 rounded-full bg-indigo-400 mt-1.5 shrink-0" />{note}
                         </li>
@@ -780,7 +772,8 @@ export default function Workspace() {
                     </ul>
                   </div>
                   <div className="border-t border-[#E8E8EF] pt-4">
-                    <p className="text-xs font-semibold text-[#374151] mb-2">Transcript</p>
+                    <p className="text-xs font-semibold text-[#374151] mb-1">Transcript</p>
+                    <p className="text-[10px] text-[#9CA3AF] mb-2">AI-generated sample — not a recording of this session.</p>
                     {!transcript && !transcriptLoading && (
                       <button onClick={generateTranscript}
                         className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#F7F7FA] border border-[#E8E8EF] text-xs text-[#374151] hover:border-indigo-200 hover:text-indigo-600 transition-colors w-full justify-center">
@@ -802,16 +795,17 @@ export default function Workspace() {
               {/* Sources */}
               {railTab === 'sources' && (
                 <div className="flex-1 overflow-y-auto p-4 space-y-2 min-h-0">
-                  <p className="text-[10px] text-[#9CA3AF] uppercase tracking-wider mb-3">Referenced this session</p>
+                  <p className="text-[10px] text-[#9CA3AF] uppercase tracking-wider mb-3">Google Ads references</p>
                   {SOURCES.map((s, i) => (
-                    <div key={i} className="flex items-start gap-2 p-2.5 rounded-lg border border-[#E8E8EF] hover:border-indigo-200 hover:bg-indigo-50/40 transition-colors cursor-pointer group">
+                    <a key={i} href={s.url} target="_blank" rel="noopener noreferrer"
+                      className="flex items-start gap-2 p-2.5 rounded-lg border border-[#E8E8EF] hover:border-indigo-200 hover:bg-indigo-50/40 transition-colors group">
                       <BookOpen size={12} className="text-[#9CA3AF] group-hover:text-indigo-500 mt-0.5 shrink-0" />
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-medium text-[#374151] leading-tight">{s.title}</p>
                         <p className="text-[10px] text-[#9CA3AF] mt-0.5">{s.domain}</p>
                       </div>
                       <ExternalLink size={10} className="text-[#D1D5DB] group-hover:text-indigo-400 shrink-0 mt-0.5" />
-                    </div>
+                    </a>
                   ))}
                 </div>
               )}
@@ -828,14 +822,14 @@ export default function Workspace() {
               <Wrench size={13} className="text-white" />
             </div>
             <span className="text-sm font-bold">Build</span>
-            <span className="text-xs text-[#9CA3AF] px-2 py-1 rounded-full bg-[#F7F7FA] border border-[#E8E8EF]">API Playground</span>
+            <span className="text-xs text-[#9CA3AF] px-2 py-1 rounded-full bg-[#F7F7FA] border border-[#E8E8EF]">Assistant playground</span>
             <div className="flex-1" />
             <button onClick={() => setBuildOpen(false)} className="p-1.5 rounded-lg hover:bg-[#F7F7FA] text-[#9CA3AF] hover:text-[#374151] transition-colors">
               <X size={14} />
             </button>
           </div>
           <div className="flex border-b border-[#E8E8EF] px-6 shrink-0">
-            {(['api', 'prompts', 'tools'] as const).map(tab => (
+            {(['api', 'prompts'] as const).map(tab => (
               <button key={tab} onClick={() => setBuildTab(tab)}
                 className={`px-4 py-2.5 text-sm font-medium transition-colors relative capitalize ${buildTab === tab ? 'text-[#111827]' : 'text-[#9CA3AF] hover:text-[#6B7280]'}`}>
                 {tab}
@@ -882,24 +876,6 @@ export default function Workspace() {
                       <p className="text-sm font-semibold text-[#374151] group-hover:text-indigo-700 mb-1">{p.label}</p>
                       <p className="text-xs text-[#9CA3AF] leading-relaxed">{p.prompt}</p>
                     </button>
-                  ))}
-                </div>
-              )}
-              {buildTab === 'tools' && (
-                <div className="space-y-3">
-                  <p className="text-xs font-semibold text-[#9CA3AF] uppercase tracking-wider">Function tools</p>
-                  {BUILD_TOOLS.map(t => (
-                    <div key={t.id} className="flex items-start gap-3 p-4 rounded-xl border border-[#E8E8EF]">
-                      <Wrench size={14} className="text-[#9CA3AF] mt-0.5 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-[#374151]">{t.label}</p>
-                        <p className="text-xs text-[#9CA3AF] mt-0.5">{t.desc}</p>
-                      </div>
-                      <button onClick={() => setEnabledTools(prev => prev.includes(t.id) ? prev.filter(x => x !== t.id) : [...prev, t.id])}
-                        className={`shrink-0 w-9 h-5 rounded-full flex items-center px-0.5 transition-colors ${enabledTools.includes(t.id) ? 'bg-indigo-500' : 'bg-[#D1D5DB]'}`}>
-                        <div className={`w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${enabledTools.includes(t.id) ? 'translate-x-4' : ''}`} />
-                      </button>
-                    </div>
                   ))}
                 </div>
               )}

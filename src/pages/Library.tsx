@@ -143,20 +143,27 @@ function HistoryPanel() {
 }
 
 function SourcesPanel() {
+  const library = usePersistStore((s) => s.library)
+  const notes = usePersistStore((s) => s.notes)
+  // Real, store-derived counts — no fabricated "healthy / 3 items" statuses.
   const sources = [
-    { name: 'My uploads', status: 'healthy', count: 3 },
-    { name: 'Google Drive', status: 'not connected', count: 0 },
-    { name: 'Session recordings', status: 'healthy', count: 5 },
+    { name: 'Saved content', count: library.length, hint: 'Items saved across Live, Learn and Play.' },
+    { name: 'Notes', count: notes.length, hint: 'Notes you have written or generated.' },
   ]
   return (
     <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
       {sources.map((s) => (
         <div key={s.name} className="p-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
           <div className="flex items-center gap-2 mb-2"><Database size={15} className="text-[var(--muted)]" /><p className="text-sm font-semibold">{s.name}</p></div>
-          <p className="text-xs text-[var(--muted)]">{s.count} items</p>
-          <span className={`inline-block mt-2 text-[10px] px-2 py-0.5 rounded-full ${s.status === 'healthy' ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600' : 'bg-[var(--surface-3)] text-[var(--muted)]'}`}>{s.status}</span>
+          <p className="text-2xl font-bold">{s.count}</p>
+          <p className="text-xs text-[var(--muted)] mt-1">{s.hint}</p>
         </div>
       ))}
+      <div className="p-4 rounded-2xl border border-dashed border-[var(--border)] bg-[var(--surface)] flex flex-col">
+        <div className="flex items-center gap-2 mb-2"><Database size={15} className="text-[var(--muted)]" /><p className="text-sm font-semibold">Google Drive</p></div>
+        <p className="text-xs text-[var(--muted)] flex-1">Connect an external source to import content.</p>
+        <span className="inline-block mt-2 text-[10px] px-2 py-0.5 rounded-full bg-[var(--surface-3)] text-[var(--muted)] w-fit">Not connected</span>
+      </div>
     </div>
   )
 }

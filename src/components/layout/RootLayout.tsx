@@ -13,7 +13,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
   const role = usePersistStore((s) => s.role)
   const setRole = usePersistStore((s) => s.setRole)
+  const activity = usePersistStore((s) => s.activity)
   const [roleOpen, setRoleOpen] = useState(false)
+  const [notifOpen, setNotifOpen] = useState(false)
 
   const [isDark, setIsDark] = useState(() =>
     typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
@@ -77,10 +79,30 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <kbd className="text-[10px] border border-[var(--border)] rounded px-1 hidden lg:inline">⌘K</kbd>
         </button>
 
-        <button className="p-2 rounded-lg hover:bg-[var(--surface-3)] text-[var(--muted)] hover:text-[var(--text)] transition-colors relative" title="Notifications">
-          <Bell size={15} />
-          <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-indigo-500" />
-        </button>
+        <div className="relative">
+          <button
+            onClick={() => setNotifOpen((o) => !o)}
+            className="p-2 rounded-lg hover:bg-[var(--surface-3)] text-[var(--muted)] hover:text-[var(--text)] transition-colors relative"
+            title="Notifications"
+          >
+            <Bell size={15} />
+            {activity.length > 0 && <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-indigo-500" />}
+          </button>
+          {notifOpen && (
+            <div className="absolute right-0 mt-1 w-72 max-h-80 overflow-y-auto bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-lg py-1 z-50">
+              <div className="px-3 py-2 text-[10px] uppercase tracking-wide text-[var(--muted)] border-b border-[var(--border)]">Recent activity</div>
+              {activity.length === 0 ? (
+                <p className="px-3 py-6 text-xs text-[var(--muted)] text-center">No notifications yet.</p>
+              ) : (
+                activity.slice(0, 8).map((a) => (
+                  <div key={a.id} className="px-3 py-2 text-xs border-b border-[var(--border)] last:border-0">
+                    <span className="capitalize font-medium">{a.surface}</span> — {a.label}
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Role switch (LLP-123) */}
         <div className="relative">

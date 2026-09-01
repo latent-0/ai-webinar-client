@@ -27,12 +27,15 @@ export default function PlaySection() {
 function PlayHome() {
   const navigate = useNavigate()
   const logActivity = usePersistStore((s) => s.logActivity)
+  const activity = usePersistStore((s) => s.activity)
   const open = (label: string) => { logActivity('play', label); navigate({ to: '/canvas' }) }
   const starters = [
-    { label: 'Start from template', icon: Layers, desc: 'Pick a ready-made scenario.' },
     { label: 'Start blank', icon: Plus, desc: 'Open an empty play space.' },
-    { label: 'Import scenario', icon: FileInput, desc: 'Bring in an existing setup.' },
+    { label: 'Open the Sandbox', icon: Layers, desc: 'Jump into the canvas and build.' },
+    { label: 'Practice a scenario', icon: FileInput, desc: 'Pick a scenario from the library below.' },
   ]
+  // Real recent activity from this surface — no fabricated history.
+  const recent = activity.filter((a) => a.surface === 'play').slice(0, 6)
   return (
     <div className="space-y-6">
       <div className="grid sm:grid-cols-3 gap-3">
@@ -46,15 +49,19 @@ function PlayHome() {
       </div>
       <div>
         <h3 className="text-sm font-semibold mb-3">Recent play sessions</h3>
-        <div className="space-y-2">
-          {['Build a Search campaign', 'Write a responsive search ad', 'Plan a negative keyword list'].map((s, i) => (
-            <div key={i} className="flex items-center gap-3 p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)]">
-              <Gamepad2 size={15} className="text-violet-500" />
-              <p className="text-sm font-medium flex-1">{s}</p>
-              <button onClick={() => open(`Resumed "${s}"`)} className="text-xs px-3 py-1.5 rounded-lg bg-[var(--surface-3)] font-medium">Resume</button>
-            </div>
-          ))}
-        </div>
+        {recent.length === 0 ? (
+          <p className="text-sm text-[var(--muted)]">No play sessions yet — open the Sandbox or run a scenario to get started.</p>
+        ) : (
+          <div className="space-y-2">
+            {recent.map((a) => (
+              <div key={a.id} className="flex items-center gap-3 p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+                <Gamepad2 size={15} className="text-violet-500" />
+                <p className="text-sm font-medium flex-1">{a.label}</p>
+                <button onClick={() => navigate({ to: '/canvas' })} className="text-xs px-3 py-1.5 rounded-lg bg-[var(--surface-3)] font-medium">Open</button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -89,6 +96,8 @@ function PlayModes() {
 
 function Scenarios() {
   const settings = usePersistStore((s) => s.settings)
+  const logActivity = usePersistStore((s) => s.logActivity)
+  const navigate = useNavigate()
   const [prompt, setPrompt] = useState('')
   const [generated, setGenerated] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -122,7 +131,7 @@ function Scenarios() {
           {library.map((s) => (
             <div key={s.title} className="p-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] flex items-center gap-3">
               <div className="flex-1"><p className="text-sm font-medium">{s.title}</p><p className="text-xs text-[var(--muted)]">{s.level}</p></div>
-              <button className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium inline-flex items-center gap-1"><Play size={12} /> Run</button>
+              <button onClick={() => { logActivity('play', `Ran scenario “${s.title}”`); navigate({ to: '/canvas' }) }} className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium inline-flex items-center gap-1"><Play size={12} /> Run</button>
             </div>
           ))}
         </div>
