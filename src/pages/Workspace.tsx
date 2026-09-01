@@ -15,6 +15,7 @@ import PollPanel from '../components/PollPanel'
 import BreakoutsPanel from '../components/BreakoutsPanel'
 import { mediaPermissionNotice, type PermState } from '../lib/media'
 import { sendHeartbeat } from '../lib/presenceClient'
+import { getVideoConfig, type VideoConfig } from '../lib/videoClient'
 
 interface JitsiParticipant {
   participantId?: string
@@ -122,8 +123,9 @@ function nowLabel() {
 export default function Workspace() {
   const { roomId } = useParams({ from: '/live/$roomId' })
   const navigate    = useNavigate()
-  const { displayName, rooms, updateRoomTokens } = useAppStore()
+  const { displayName, rooms, updateRoomTokens, endRoom } = useAppStore()
   const room = rooms.find(r => r.id === roomId)
+  const isHost = !!room?.host && room.host.toLowerCase() === (displayName || '').toLowerCase()
 
   // ── Stage / Sandbox view (LLP-139)
   const [view, setView] = useState<StageView>('stage')
@@ -158,6 +160,8 @@ export default function Workspace() {
 
   // ── Misc
   const [copied, setCopied]                   = useState(false)
+  const [videoCfg, setVideoCfg]               = useState<VideoConfig | null>(null)
+  const [leaveOpen, setLeaveOpen]             = useState(false)
   const [jitsiLoaded, setJitsiLoaded]         = useState(false)
   const [participants, setParticipants]       = useState<RosterEntry[]>([])
   const [rosterOpen, setRosterOpen]           = useState(false)
@@ -186,25 +190,46 @@ export default function Workspace() {
   // ── Reset assistant messages when block changes
   useEffect(() => { setAssistantMsgs([]) }, [expandedBlock])
 
-  // ── Load Jitsi
+  // ── Resolve the video backend (JaaS if configured, else public meet.jit.si).
   useEffect(() => {
-    if (document.getElementById('jitsi-api-script')) { setJitsiLoaded(true); return }
+    let stop = false
+    void getVideoConfig(roomId, displayName || 'Guest').then((c) => { if (!stop) setVideoCfg(c) })
+    return () => { stop = true }
+  }, [roomId, displayName])
+
+  // ── Load the right Jitsi external_api.js for the resolved backend.
+  useEffect(() => {
+    if (!videoCfg) return
+    const src = videoCfg.configured
+      ? `https://8x8.vc/${videoCfg.appId}/external_api.js`
+      : 'https://meet.jit.si/external_api.js'
+    const existing = document.getElementById('jitsi-api-script') as HTMLScriptElement | null
+    if (existing) {
+      // A script (possibly for the other backend) is already loaded this
+      // session; the JitsiMeetExternalAPI global is shared, so just proceed.
+      setJitsiLoaded(true)
+      return
+    }
     const s = document.createElement('script')
     s.id = 'jitsi-api-script'
-    s.src = 'https://meet.jit.si/external_api.js'
+    s.src = src
     s.async = true
     s.onload = () => setJitsiLoaded(true)
     document.body.appendChild(s)
-  }, [])
+  }, [videoCfg])
 
   // ── Init Jitsi. The container lives OUTSIDE the collapsible rail and is never
   //    conditionally unmounted, so collapsing a panel or switching the stage
   //    view can no longer end the call (LLP-141).
   useEffect(() => {
-    if (!jitsiLoaded || !jitsiContainerRef.current) return
+    if (!jitsiLoaded || !jitsiContainerRef.current || !videoCfg) return
     if (jitsiApiRef.current) { jitsiApiRef.current.dispose(); jitsiApiRef.current = null }
-    const api = new window.JitsiMeetExternalAPI('meet.jit.si', {
-      roomName: `sandbox-live-${roomId}`,
+    // JaaS (private, host is moderator so the meeting starts) when configured;
+    // otherwise fall back to public meet.jit.si.
+    const domain = videoCfg.configured ? (videoCfg.domain || '8x8.vc') : 'meet.jit.si'
+    const roomName = videoCfg.configured ? (videoCfg.roomName as string) : `sandbox-live-${roomId}`
+    const options: Record<string, unknown> = {
+      roomName,
       parentNode: jitsiContainerRef.current,
       width: '100%', height: '100%',
       userInfo: { displayName: displayName || 'Guest', email: '' },
@@ -220,7 +245,9 @@ export default function Workspace() {
         SHOW_CHROME_EXTENSION_BANNER: false,
         FILM_STRIP_MAX_HEIGHT: 80,
       },
-    })
+    }
+    if (videoCfg.configured && videoCfg.jwt) options.jwt = videoCfg.jwt
+    const api = new window.JitsiMeetExternalAPI(domain, options)
     // Presence + host identification (T-64 / LLP-70). Rebuild the roster from
     // Jitsi every 2s so the list is accurate within 2s of any change, with
     // event listeners making it feel instant in between.
@@ -278,7 +305,7 @@ export default function Workspace() {
       localIdRef.current = null
       setParticipants([])
     }
-  }, [jitsiLoaded, roomId, displayName, hostName]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [jitsiLoaded, videoCfg, roomId, displayName, hostName]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Presence heartbeat (LLP-82 / T-76) so the facilitator monitor grid can see
   // who is in this room and how active it is. Best-effort; silent if presence
@@ -391,7 +418,16 @@ export default function Workspace() {
 
   function toggleMic() { jitsiApiRef.current?.executeCommand('toggleAudio'); setMicMuted(m => !m) }
   function toggleCam() { jitsiApiRef.current?.executeCommand('toggleVideo'); setCamMuted(c => !c) }
-  function hangUp()    { jitsiApiRef.current?.executeCommand('hangup'); navigate({ to: '/live' }) }
+  /** Leave the room: hang up the call and return to the lobby. */
+  function leaveSession() {
+    try { jitsiApiRef.current?.executeCommand('hangup') } catch { /* ignore */ }
+    navigate({ to: '/live' })
+  }
+  /** Host: end the session for everyone (blocks further joins), then leave. */
+  function endSession() {
+    endRoom(roomId)
+    leaveSession()
+  }
 
   // ── Video stage (always mounted). Large in stage view; a corner PiP while the
   //    Sandbox fills the stage (LLP-139 / LLP-141).
@@ -424,7 +460,7 @@ export default function Workspace() {
           className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${camMuted ? 'bg-red-500' : 'bg-white/20 hover:bg-white/30'}`}>
           {camMuted ? <VideoOff size={13} className="text-white" /> : <Video size={13} className="text-white" />}
         </button>
-        <button onClick={hangUp} title="Leave" className="w-8 h-8 rounded-full bg-red-600 hover:bg-red-500 flex items-center justify-center transition-colors">
+        <button onClick={() => setLeaveOpen(true)} title="Leave" className="w-8 h-8 rounded-full bg-red-600 hover:bg-red-500 flex items-center justify-center transition-colors">
           <PhoneOff size={13} className="text-white" />
         </button>
       </div>
@@ -518,8 +554,9 @@ export default function Workspace() {
           {(displayName || 'U')[0].toUpperCase()}
         </div>
 
-        <button onClick={() => navigate({ to: '/live' })} className="p-1.5 rounded-lg hover:bg-red-50 text-[#9CA3AF] hover:text-red-400 transition-colors ml-1">
-          <X size={14} />
+        <button onClick={() => setLeaveOpen(true)} title="Leave session"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-sm font-medium transition-colors ml-1">
+          <PhoneOff size={13} /> Leave
         </button>
       </header>
 
@@ -813,6 +850,29 @@ export default function Workspace() {
           )}
         </div>
       </div>
+
+      {/* ── Leave / End confirm ─────────────────────────────────────────────────── */}
+      {leaveOpen && (
+        <div className="fixed inset-0 z-[95] flex items-center justify-center px-4" onClick={() => setLeaveOpen(false)}>
+          <div className="absolute inset-0 bg-black/40" />
+          <div className="relative w-full max-w-sm p-5 rounded-2xl bg-white border border-[#E8E8EF] shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 mb-2">
+              <PhoneOff size={16} className="text-red-500" />
+              <h4 className="text-sm font-semibold text-[#111827]">Leave this session?</h4>
+            </div>
+            <p className="text-xs text-[#6B7280] mb-4">
+              You’ll return to the Live lobby.{isHost ? ' As the host, you can also end the session for everyone — this blocks further joins.' : ''}
+            </p>
+            <div className="flex gap-2">
+              <button onClick={() => setLeaveOpen(false)} className="flex-1 py-2 rounded-lg border border-[#E8E8EF] text-sm font-medium text-[#374151] hover:bg-[#F7F7FA]">Cancel</button>
+              <button onClick={leaveSession} className="flex-1 py-2 rounded-lg bg-[#111827] hover:bg-black text-white text-sm font-semibold">Leave</button>
+              {isHost && (
+                <button onClick={endSession} className="flex-1 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-semibold">End session</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Build mode overlay ──────────────────────────────────────────────────── */}
       {buildOpen && (

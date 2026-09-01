@@ -32,6 +32,8 @@ interface AppState {
 
   addRoom: (room: Room) => void
   removeRoom: (id: string) => void
+  /** Mark a session ended (host "End session") — blocks further joins. */
+  endRoom: (id: string) => void
   addLearnMessage: (msg: Message) => void
   addPlayMessage: (msg: Message) => void
   addLiveAiMessage: (msg: Message) => void
@@ -53,6 +55,9 @@ export const useAppStore = create<AppState>((set) => ({
 
   addRoom: (room: Room) => set((s: AppState) => ({ rooms: [room, ...s.rooms] })),
   removeRoom: (id: string) => set((s: AppState) => ({ rooms: s.rooms.filter((r: Room) => r.id !== id) })),
+  endRoom: (id: string) => set((s: AppState) => ({
+    rooms: s.rooms.map((r: Room) => (r.id === id ? { ...r, state: 'ended', isActive: false } : r)),
+  })),
   addLearnMessage: (msg: Message) => set((s: AppState) => ({ learnMessages: [...s.learnMessages, msg] })),
   addPlayMessage: (msg: Message) => set((s: AppState) => ({ playMessages: [...s.playMessages, msg] })),
   addLiveAiMessage: (msg: Message) => set((s: AppState) => ({ liveAiMessages: [...s.liveAiMessages, msg] })),
